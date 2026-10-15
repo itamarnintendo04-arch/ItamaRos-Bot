@@ -1,2 +1,0 @@
-# ItamaRos-Tickets
-hj
