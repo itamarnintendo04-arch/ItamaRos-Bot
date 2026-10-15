@@ -85,7 +85,9 @@ async function handleCloseModal(interaction) {
         });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({
+        ephemeral: true
+    });
 
     const collection = getTickets();
 
@@ -105,38 +107,24 @@ async function handleCloseModal(interaction) {
         .getTextInputValue("closure_message")
         .trim();
 
-    const owner = await interaction.client.users.fetch(
-        ticket.userId
-    ).catch(() => null);
+    if (!closureMessage) {
+        return interaction.editReply({
+            content: "❌ A closure message is required."
+        });
+    }
 
+    // Generate transcript before closing.
     const transcript = await buildTranscript(
         interaction.channel,
         ticket
     );
 
-    if (owner) {
-        const dmEmbed = new EmbedBuilder()
-            .setColor("#ED4245")
-            .setTitle("🔒 Your Ticket Has Been Closed")
-            .setDescription(
-                [
-                    "Your ticket has been closed by our management team.",
-                    "",
-                    "**Management Message:**",
-                    closureMessage,
-                    "",
-                    "Thank you for contacting our support team!"
-                ].join("\n")
-            )
-            .setTimestamp();
-
-        await owner.send({
-            embeds: [dmEmbed]
-        }).catch(() => null);
-    }
-
-    await collection.updateOne(
-        { _id: ticket._id },
+    // Update database safely.
+    const updateResult = await collection.updateOne(
+        {
+            _id: ticket._id,
+            status: "open"
+        },
         {
             $set: {
                 status: "closed",
@@ -148,43 +136,117 @@ async function handleCloseModal(interaction) {
         }
     );
 
-    if (transcript) {
-        await interaction.user.send({
-            content: `📄 Transcript for ticket ${ticket.channelId}`,
-            files: [transcript]
-        }).catch(() => null);
+    if (updateResult.modifiedCount !== 1) {
+        return interaction.editReply({
+            content: "❌ This ticket has already been closed."
+        });
     }
 
-    const closedEmbed = new EmbedBuilder()
-        .setColor("#ED4245")
-        .setTitle("🔒 Ticket Closed")
-        .setDescription(
-            [
-                `**Closed by:** ${interaction.user}`,
-                `**Ticket owner:** <@${ticket.userId}>`,
+    // Send closure message to ticket owner.
+    let dmSent = false;
+
+    try {
+        const owner = await interaction.client.users.fetch(
+            ticket.userId
+        );
+
+        const dmEmbed = new EmbedBuilder()
+            .setColor("#ED4245")
+            .setTitle("🔒 Your Ticket Has Been Closed")
+            .setDescription([
+                "Your ticket has been closed by our management team.",
                 "",
                 "**Management Message:**",
                 closureMessage,
                 "",
-                "This channel is now inactive.",
-                "The channel will be reused if the owner opens another ticket."
-            ].join("\n")
-        )
+                "Thank you for contacting our support team!"
+            ].join("\n"))
+            .setTimestamp();
+
+        await owner.send({
+            embeds: [dmEmbed]
+        });
+
+        dmSent = true;
+
+    } catch (error) {
+        console.error(
+            "[Ticket Closure DM Error]",
+            error
+        );
+    }
+
+    // Send transcript to closing administrator.
+    let transcriptSent = false;
+
+    if (transcript) {
+        try {
+            await interaction.user.send({
+                content: [
+                    "📄 **Ticket Transcript**",
+                    "",
+                    `**Ticket Owner:** <@${ticket.userId}>`,
+                    `**Ticket Type:** ${ticket.typeLabel}`,
+                    `**Channel:** ${ticket.channelId}`
+                ].join("\n"),
+                files: [transcript]
+            });
+
+            transcriptSent = true;
+
+        } catch (error) {
+            console.error(
+                "[Ticket Transcript Delivery Error]",
+                error
+            );
+        }
+    }
+
+    // Disable the owner's ability to send messages.
+    try {
+        await interaction.channel.permissionOverwrites.edit(
+            ticket.userId,
+            {
+                SendMessages: false
+            }
+        );
+    } catch (error) {
+        console.error(
+            "[Ticket Permission Error]",
+            error
+        );
+    }
+
+    // Publish closure information in the ticket channel.
+    const closedEmbed = new EmbedBuilder()
+        .setColor("#ED4245")
+        .setTitle("🔒 Ticket Closed")
+        .setDescription([
+            `**Closed by:** ${interaction.user}`,
+            `**Ticket owner:** <@${ticket.userId}>`,
+            "",
+            "**Management Message:**",
+            closureMessage,
+            "",
+            "This channel is now inactive.",
+            "Your previous messages will remain available.",
+            "This channel can be reused when you open another ticket."
+        ].join("\n"))
         .setTimestamp();
 
     await interaction.channel.send({
         embeds: [closedEmbed]
     });
 
-    await interaction.channel.permissionOverwrites.edit(
-        ticket.userId,
-        {
-            SendMessages: false
-        }
-    );
+    const results = [
+        "✅ Ticket closed successfully.",
+        "",
+        `📩 Owner DM: ${dmSent ? "Sent" : "Could not be delivered"}`,
+        `📄 Transcript: ${transcriptSent ? "Sent" : "Could not be delivered"}`
+    ].join("\n");
 
     await interaction.editReply({
-        content: "✅ Ticket closed successfully."
+        content: results
     });
 }
 
