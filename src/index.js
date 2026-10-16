@@ -182,9 +182,9 @@ client.once(Events.ClientReady, readyClient => {
 
 async function start() {
     try {
+        console.log("[MongoDB] Connecting...");
         await connectDatabase();
-
-        console.log("[MongoDB] Connected.");
+        console.log("[MongoDB] Connected successfully!");
 
         await registerCommands();
 
