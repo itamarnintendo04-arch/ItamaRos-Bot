@@ -1,10 +1,13 @@
+
 require("dotenv").config();
 
 const {
     Client,
     GatewayIntentBits,
     Collection,
-    Events
+    Events,
+    REST,
+    Routes
 } = require("discord.js");
 
 const fs = require("fs");
@@ -100,6 +103,43 @@ client.commands.set(
 );
 
 // =========================
+// REGISTER SLASH COMMANDS
+// =========================
+
+async function registerCommands() {
+    if (!config.CLIENT_ID) {
+        throw new Error("Missing CLIENT_ID in config.js");
+    }
+
+    if (!config.GUILD_ID) {
+        throw new Error("Missing GUILD_ID in config.js");
+    }
+
+    if (!config.DISCORD_TOKEN) {
+        throw new Error("Missing DISCORD_TOKEN in config.js");
+    }
+
+    const rest = new REST({ version: "10" })
+        .setToken(config.DISCORD_TOKEN);
+
+    const commands = [
+        ticketCommand.data.toJSON()
+    ];
+
+    console.log("[Commands] Registering slash commands...");
+
+    await rest.put(
+        Routes.applicationGuildCommands(
+            config.CLIENT_ID,
+            config.GUILD_ID
+        ),
+        { body: commands }
+    );
+
+    console.log("[Commands] Successfully registered /ticket");
+}
+
+// =========================
 // DISPATCH SLASH COMMANDS
 // =========================
 
@@ -145,6 +185,8 @@ async function start() {
         await connectDatabase();
 
         console.log("[MongoDB] Connected.");
+
+        await registerCommands();
 
         await client.login(config.DISCORD_TOKEN);
     } catch (error) {
