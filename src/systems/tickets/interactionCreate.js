@@ -2,10 +2,12 @@
 const { MessageFlags } = require("discord.js");
 
 const { TICKET_TYPES } = require("./config");
+
 const {
     buildTicketModal,
     getTicketFormAnswers
 } = require("./forms");
+
 const { createTicket } = require("./create");
 
 const {
@@ -23,7 +25,7 @@ const { handleClaimButton } = require("./claim");
 
 async function handleTicketInteraction(interaction) {
     try {
-        // SELECT MENU - OPEN FORM DIRECTLY
+        // SELECT MENU
         if (
             interaction.isStringSelectMenu() &&
             interaction.customId === "ticket_type_select"
@@ -46,7 +48,7 @@ async function handleTicketInteraction(interaction) {
             );
         }
 
-        // HELP BUTTON (kept for older panels)
+        // OLD HELP BUTTON
         if (
             interaction.isButton() &&
             interaction.customId.startsWith("ticket_help_")
@@ -55,7 +57,7 @@ async function handleTicketInteraction(interaction) {
             return handleTicketHelp(interaction);
         }
 
-        // OLD OPEN FORM BUTTON (kept for older panels)
+        // OLD OPEN FORM BUTTON
         if (
             interaction.isButton() &&
             interaction.customId.startsWith("ticket_form_open_")
@@ -86,10 +88,32 @@ async function handleTicketInteraction(interaction) {
                 formData
             );
 
+            // USER ALREADY HAS AN ACTIVE TICKET
+            if (
+                !result.success &&
+                result.reason === "ACTIVE_TICKET"
+            ) {
+                return interaction.editReply({
+                    content: [
+                        "❌ You already have an active ticket!",
+                        "",
+                        `Open your existing ticket here: ${result.channel}`,
+                        "",
+                        "Please close your current ticket before opening another one."
+                    ].join("\n")
+                });
+            }
+
+            if (!result.success) {
+                return interaction.editReply({
+                    content: "❌ Could not create your ticket. Please try again."
+                });
+            }
+
             return interaction.editReply({
                 content: result.reused
-                    ? "✅ Your previous ticket channel has been reopened."
-                    : "✅ Your ticket has been created successfully."
+                    ? `✅ Your previous ticket channel has been reopened: ${result.channel}`
+                    : `✅ Your ticket has been created successfully: ${result.channel}`
             });
         }
 
@@ -141,14 +165,26 @@ async function handleTicketInteraction(interaction) {
     } catch (error) {
         console.error("[Ticket interaction error]", error);
 
-        const errorMessage =
+        let errorMessage =
             "❌ Something went wrong while processing your ticket.";
+
+        if (error.message?.startsWith("MISSING_BOT_PERMISSIONS")) {
+            errorMessage = [
+                "❌ **ItamaRos Bot is missing permissions!**",
+                "",
+                "Go to:",
+                "**Server Settings → Roles → ItamaRos Bot**",
+                "",
+                "Enable the following permissions:",
+                "",
+                error.message.split("\n").slice(2).join("\n")
+            ].join("\n");
+        }
 
         try {
             if (interaction.deferred || interaction.replied) {
-                await interaction.followUp({
-                    content: errorMessage,
-                    flags: MessageFlags.Ephemeral
+                await interaction.editReply({
+                    content: errorMessage
                 });
             } else {
                 await interaction.reply({
