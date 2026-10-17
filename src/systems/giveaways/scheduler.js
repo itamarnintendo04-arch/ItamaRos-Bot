@@ -1,7 +1,7 @@
-
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
 const { endGiveaway } = require("./end");
+const { finishGiveaway } = require("./finish");
 
 let schedulerInterval = null;
 let isChecking = false;
@@ -29,36 +29,11 @@ async function checkExpiredGiveaways(client) {
 
                 if (!result.success) continue;
 
-                const guild = await client.guilds.fetch(
-                    giveaway.guildId
-                ).catch(() => null);
-
-                if (!guild) continue;
-
-                const channel = await guild.channels.fetch(
-                    giveaway.channelId
-                ).catch(() => null);
-
-                if (!channel) continue;
-
-                const message = await channel.messages.fetch(
-                    giveaway.messageId
-                ).catch(() => null);
-
-                if (!message) continue;
-
-                const winnerText = result.winners.length
-                    ? result.winners.map(id => `<@${id}>`).join(", ")
-                    : "No participants entered this giveaway.";
-
-                await message.reply({
-                    content: [
-                        "🎉 **GIVEAWAY ENDED!**",
-                        "",
-                        `**Prize:** ${giveaway.prize}`,
-                        `**Winner(s):** ${winnerText}`
-                    ].join("\n")
-                });
+                await finishGiveaway(
+                    client,
+                    result.giveaway,
+                    result.winners
+                );
 
             } catch (error) {
                 console.error(
@@ -67,6 +42,7 @@ async function checkExpiredGiveaways(client) {
                 );
             }
         }
+
     } catch (error) {
         console.error("[Giveaways] Scheduler error:", error);
     } finally {
@@ -87,10 +63,10 @@ function startGiveawayScheduler(client) {
 }
 
 function stopGiveawayScheduler() {
-    if (!schedulerInterval) return;
-
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
+    if (schedulerInterval) {
+        clearInterval(schedulerInterval);
+        schedulerInterval = null;
+    }
 
     console.log("[Giveaways] Scheduler stopped.");
 }
