@@ -1,4 +1,3 @@
-
 const {
     EmbedBuilder,
     ActionRowBuilder,
@@ -15,13 +14,14 @@ async function createGiveaway({
     host,
     prize,
     duration,
-    winners
+    winners,
+    image = null
 }) {
     if (!guild || !channel || !host) {
         throw new Error("Missing giveaway information.");
     }
 
-    if (!prize || prize.length > 100) {
+    if (!prize || prize.length > 200) {
         throw new Error("Invalid giveaway prize.");
     }
 
@@ -44,6 +44,10 @@ async function createGiveaway({
         throw new Error("Invalid giveaway channel.");
     }
 
+    if (image && (!image.contentType || !image.contentType.startsWith("image/"))) {
+        throw new Error("The giveaway attachment must be an image.");
+    }
+
     const collection = getDatabase().collection(
         GIVEAWAY_SETTINGS.COLLECTION
     );
@@ -59,6 +63,7 @@ async function createGiveaway({
         hostId: host.id,
         hostUsername: host.username,
         prize,
+        imageUrl: image?.url || null,
         winnerCount: winners,
         participants: [],
         winners: [],
@@ -70,6 +75,8 @@ async function createGiveaway({
     const result = await collection.insertOne(giveaway);
     const giveawayId = result.insertedId.toString();
 
+    const endTimestamp = Math.floor(endsAt.getTime() / 1000);
+
     const embed = new EmbedBuilder()
         .setColor(GIVEAWAY_SETTINGS.DEFAULT_COLOR)
         .setTitle("🎉 GIVEAWAY")
@@ -78,10 +85,10 @@ async function createGiveaway({
             "",
             `**Hosted by:** <@${host.id}>`,
             `**Winners:** ${winners}`,
-            `**Participants:** 0`,
+            "**Participants:** 0",
             "",
-            `**Ends:** <t:${Math.floor(endsAt.getTime() / 1000)}:F>`,
-            `**Time remaining:** <t:${Math.floor(endsAt.getTime() / 1000)}:R>`,
+            `**Ends:** <t:${endTimestamp}:F>`,
+            `**Time remaining:** <t:${endTimestamp}:R>`,
             "",
             "Click 🎉 to enter or ❌ to leave!"
         ].join("\n"))
@@ -90,12 +97,16 @@ async function createGiveaway({
         })
         .setTimestamp();
 
+    if (image?.url) {
+        embed.setImage(image.url);
+    }
+
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(
                 `${GIVEAWAY_SETTINGS.JOIN_BUTTON_ID}:${giveawayId}`
             )
-            .setLabel("0")
+            .setLabel("ENTER 0")
             .setEmoji("🎉")
             .setStyle(ButtonStyle.Success),
 
