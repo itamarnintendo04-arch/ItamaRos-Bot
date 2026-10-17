@@ -35,7 +35,7 @@ async function handleDropInteraction(interaction) {
                     channel,
                     host: interaction.user,
                     prize,
-                    image: image?.url || null
+                    image: image || null
                 });
 
                 return interaction.editReply({
@@ -81,7 +81,9 @@ async function handleDropInteraction(interaction) {
         const message = "❌ Something went wrong while processing this drop.";
 
         if (interaction.deferred || interaction.replied) {
-            return interaction.editReply({ content: message }).catch(() => {});
+            return interaction.editReply({
+                content: message
+            }).catch(() => {});
         }
 
         return interaction.reply({
