@@ -1,50 +1,70 @@
 const { EmbedBuilder } = require("discord.js");
 
-async function notifyGiveawayWinners(client, giveaway, winners) {
-    const results = [];
+async function notifyGiveawayWinners(client, giveaway, winners, ticketResults = []) {
+    const notifications = [];
 
     for (const winnerId of winners) {
         try {
             const user = await client.users.fetch(winnerId);
 
+            const ticketResult = ticketResults.find(
+                result => result.userId === winnerId
+            );
+
+            let ticketMessage;
+
+            if (ticketResult?.success && ticketResult.channelId) {
+                const ticketLink =
+                    `https://discord.com/channels/${giveaway.guildId}/${ticketResult.channelId}`;
+
+                ticketMessage =
+                    `Your private winner ticket is ready!\n` +
+                    `Open it here: <#${ticketResult.channelId}>\n` +
+                    `[Open Ticket](${ticketLink})`;
+            } else if (ticketResult?.reason === "ACTIVE_TICKET") {
+                ticketMessage =
+                    "You already have an active ticket in the server. " +
+                    "Please close it or contact the staff team to claim your prize.";
+            } else {
+                ticketMessage =
+                    "We couldn't automatically create your winner ticket. " +
+                    "Please contact the server staff for assistance.";
+            }
+
             const embed = new EmbedBuilder()
                 .setColor(0x22C55E)
-                .setTitle("🎉 YOU WON A GIVEAWAY!")
+                .setTitle("🎉 Congratulations! You Won!")
                 .setDescription(
-                    [
-                        `Congratulations! You won **${giveaway.prize}**!`,
-                        "",
-                        `**Hosted by:** <@${giveaway.hostId}>`,
-                        "",
-                        "Please open a **Giveaway Winner** ticket in the server to claim your prize.",
-                        "Our staff will help you with the next steps."
-                    ].join("\n")
+                    `You won **${giveaway.prize}**!\n\n` +
+                    `Please claim your prize using the instructions below.`
                 )
-                .setFooter({ text: "ItamaRos Bot • Giveaway System" })
+                .addFields({
+                    name: "🎫 Winner Ticket",
+                    value: ticketMessage
+                })
+                .setFooter({ text: "ItamaRos Bot" })
                 .setTimestamp();
 
             await user.send({ embeds: [embed] });
 
-            results.push({
+            notifications.push({
                 userId: winnerId,
                 dmSent: true
             });
-
-            console.log(`[Giveaways] Winner DM sent to ${winnerId}.`);
         } catch (error) {
             console.error(
                 `[Giveaways] Could not DM winner ${winnerId}:`,
-                error.message
+                error
             );
 
-            results.push({
+            notifications.push({
                 userId: winnerId,
                 dmSent: false
             });
         }
     }
 
-    return results;
+    return notifications;
 }
 
 module.exports = { notifyGiveawayWinners };
