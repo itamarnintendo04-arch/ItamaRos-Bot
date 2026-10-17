@@ -3,15 +3,42 @@ const { PermissionFlagsBits } = require("discord.js");
 const { createGiveaway } = require("./create");
 const { forceEndGiveaway } = require("./end");
 const { finishGiveaway } = require("./finish");
+
 const {
     cancelGiveaway,
     disableCancelledGiveaway
 } = require("./cancel");
+
 const { handleGiveawayButtons } = require("./buttons");
+
+function parseDuration(value) {
+    const match = /^(\d+)(M|H|D|W)$/i.exec(value.trim());
+
+    if (!match) {
+        throw new Error("Invalid duration. Use formats like 1M, 1H, 1D or 1W.");
+    }
+
+    const amount = Number(match[1]);
+    const unit = match[2].toUpperCase();
+
+    const multipliers = {
+        M: 1,
+        H: 60,
+        D: 1440,
+        W: 10080
+    };
+
+    const minutes = amount * multipliers[unit];
+
+    if (!Number.isSafeInteger(minutes) || minutes < 1) {
+        throw new Error("Duration must be at least 1 minute.");
+    }
+
+    return minutes;
+}
 
 async function handleGiveawayInteraction(interaction) {
     try {
-        // Handle giveaway buttons
         if (interaction.isButton()) {
             if (
                 interaction.customId.startsWith("giveaway_join:") ||
@@ -23,7 +50,6 @@ async function handleGiveawayInteraction(interaction) {
             return;
         }
 
-        // Handle giveaway slash commands
         if (
             !interaction.isChatInputCommand() ||
             interaction.commandName !== "giveaway"
@@ -48,9 +74,22 @@ async function handleGiveawayInteraction(interaction) {
             await interaction.deferReply({ ephemeral: true });
 
             const prize = interaction.options.getString("prize");
-            const duration = interaction.options.getString("duration");
+            const durationInput = interaction.options.getString("duration");
             const winners = interaction.options.getInteger("winners");
             const channel = interaction.options.getChannel("channel");
+            const attachment = interaction.options.getAttachment("image");
+
+            const duration = parseDuration(durationInput);
+
+            if (
+                attachment &&
+                (!attachment.contentType ||
+                    !attachment.contentType.startsWith("image/"))
+            ) {
+                return interaction.editReply({
+                    content: "❌ The attachment must be an image."
+                });
+            }
 
             const result = await createGiveaway({
                 guild: interaction.guild,
@@ -58,17 +97,18 @@ async function handleGiveawayInteraction(interaction) {
                 host: interaction.user,
                 prize,
                 duration,
-                winners
+                winners,
+                image: attachment
             });
 
-            if (result?.success === false) {
+            if (!result?.success) {
                 return interaction.editReply({
-                    content: `❌ Could not create giveaway: ${result.reason || "Unknown error."}`
+                    content: `❌ Could not create giveaway: ${result?.reason || "Unknown error."}`
                 });
             }
 
             return interaction.editReply({
-                content: `✅ Giveaway created successfully in ${channel}.`
+                content: `✅ Giveaway created successfully in ${channel}.\n[Jump to Giveaway](${result.message.url})`
             });
         }
 
@@ -120,7 +160,8 @@ async function handleGiveawayInteraction(interaction) {
     } catch (error) {
         console.error("[Giveaways] Interaction error:", error);
 
-        const message = "❌ Something went wrong while processing this giveaway.";
+        const message =
+            `❌ ${error.message || "Something went wrong while processing this giveaway."}`;
 
         if (interaction.deferred || interaction.replied) {
             await interaction.editReply({ content: message }).catch(() => {});
