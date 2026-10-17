@@ -6,29 +6,46 @@ const {
     ButtonStyle
 } = require("discord.js");
 
+const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { DROP_SETTINGS } = require("./config");
 
 async function endDrop({ guild, dropId, endedBy }) {
+    if (!ObjectId.isValid(dropId)) {
+        return {
+            success: false,
+            reason: "INVALID_ID"
+        };
+    }
+
     const db = getDatabase();
     const drops = db.collection(DROP_SETTINGS.COLLECTION);
+    const objectId = new ObjectId(dropId);
 
     const drop = await drops.findOne({
-        _id: dropId,
-        guildId: guild.id,
-        status: DROP_SETTINGS.STATUS.ACTIVE
+        _id: objectId,
+        guildId: guild.id
     });
 
     if (!drop) {
         return {
             success: false,
-            reason: "NOT_ACTIVE"
+            reason: "NOT_FOUND"
+        };
+    }
+
+    if (drop.status !== DROP_SETTINGS.STATUS.ACTIVE) {
+        return {
+            success: false,
+            reason: drop.winnerId
+                ? "ALREADY_CLAIMED"
+                : "NOT_ACTIVE"
         };
     }
 
     const result = await drops.updateOne(
         {
-            _id: dropId,
+            _id: objectId,
             guildId: guild.id,
             status: DROP_SETTINGS.STATUS.ACTIVE,
             winnerId: null
@@ -63,7 +80,7 @@ async function endDrop({ guild, dropId, endedBy }) {
                 .setTitle("DROP ENDED")
                 .setDescription(
                     `**Prize:** ${drop.prize}\n\n` +
-                    "This drop was manually ended.\n" +
+                    "**This drop was manually ended.**\n" +
                     "No winner was selected."
                 )
                 .setColor(0xEF4444)
@@ -87,7 +104,7 @@ async function endDrop({ guild, dropId, endedBy }) {
             await message.edit({
                 embeds: [embed],
                 components: [disabledRow]
-            }).catch(console.error);
+            });
         }
     }
 
