@@ -2,14 +2,10 @@
 const { MessageFlags } = require("discord.js");
 
 const { TICKET_TYPES } = require("./config");
-
 const {
     buildTicketModal,
-    buildFormPromptButtons,
-    handleTicketHelp,
     getTicketFormAnswers
 } = require("./forms");
-
 const { createTicket } = require("./create");
 
 const {
@@ -27,7 +23,7 @@ const { handleClaimButton } = require("./claim");
 
 async function handleTicketInteraction(interaction) {
     try {
-        // SELECT MENU
+        // SELECT MENU - OPEN FORM DIRECTLY
         if (
             interaction.isStringSelectMenu() &&
             interaction.customId === "ticket_type_select"
@@ -45,18 +41,21 @@ async function handleTicketInteraction(interaction) {
                 });
             }
 
-            const prompt = buildFormPromptButtons(type.id);
-
-            return interaction.reply({
-                content:
-                    `You selected **${type.label}**.\n\n` +
-                    "Click **Open Form** to continue, or use the help button if you need assistance.",
-                components: [prompt],
-                flags: MessageFlags.Ephemeral
-            });
+            return interaction.showModal(
+                buildTicketModal(type.id)
+            );
         }
 
-        // OPEN FORM
+        // HELP BUTTON (kept for older panels)
+        if (
+            interaction.isButton() &&
+            interaction.customId.startsWith("ticket_help_")
+        ) {
+            const { handleTicketHelp } = require("./forms");
+            return handleTicketHelp(interaction);
+        }
+
+        // OLD OPEN FORM BUTTON (kept for older panels)
         if (
             interaction.isButton() &&
             interaction.customId.startsWith("ticket_form_open_")
@@ -66,28 +65,9 @@ async function handleTicketInteraction(interaction) {
                 ""
             );
 
-            const type = Object.values(TICKET_TYPES).find(
-                item => item.id === typeId
-            );
-
-            if (!type) {
-                return interaction.reply({
-                    content: "❌ Invalid ticket type.",
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-
             return interaction.showModal(
                 buildTicketModal(typeId)
             );
-        }
-
-        // HELP BUTTON
-        if (
-            interaction.isButton() &&
-            interaction.customId.startsWith("ticket_help_")
-        ) {
-            return handleTicketHelp(interaction);
         }
 
         // FORM SUBMISSION
