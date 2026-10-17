@@ -25,21 +25,27 @@ async function handleDropInteraction(interaction) {
 
             if (subcommand === "start") {
                 const prize = interaction.options.getString("prize");
-                const channel = interaction.options.getChannel("channel");
                 const image = interaction.options.getAttachment("image");
+
+                if (!interaction.channel?.isTextBased() || !interaction.channel.guild) {
+                    return interaction.reply({
+                        content: "❌ Drops can only be created in a server text channel.",
+                        ephemeral: true
+                    });
+                }
 
                 await interaction.deferReply({ ephemeral: true });
 
                 const result = await createDrop({
                     guild: interaction.guild,
-                    channel,
+                    channel: interaction.channel,
                     host: interaction.user,
                     prize,
                     image: image || null
                 });
 
                 return interaction.editReply({
-                    content: `✅ Drop created successfully in ${channel}!`
+                    content: `✅ Drop created successfully in ${interaction.channel}!`
                 });
             }
 
@@ -55,10 +61,15 @@ async function handleDropInteraction(interaction) {
                 });
 
                 if (!result.success) {
+                    const messages = {
+                        INVALID_ID: "❌ Invalid drop ID.",
+                        NOT_FOUND: "❌ This drop does not exist.",
+                        ALREADY_CLAIMED: "❌ This drop has already been claimed.",
+                        NOT_ACTIVE: "❌ This drop is not active."
+                    };
+
                     return interaction.editReply({
-                        content: result.reason === "ALREADY_CLAIMED"
-                            ? "❌ This drop has already been claimed."
-                            : "❌ This drop is not active or does not exist."
+                        content: messages[result.reason] || "❌ Could not end this drop."
                     });
                 }
 
