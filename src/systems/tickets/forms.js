@@ -11,10 +11,22 @@ const {
 const { TICKET_TYPES } = require("./config");
 
 /**
+ * Finds a ticket type by its key or ID.
+ */
+function findTicketType(typeKey) {
+    return (
+        TICKET_TYPES[typeKey] ||
+        Object.values(TICKET_TYPES).find(
+            (type) => type.id === typeKey
+        )
+    );
+}
+
+/**
  * Creates a ticket form modal.
  */
 function buildTicketModal(typeKey) {
-    const ticketType = TICKET_TYPES[typeKey];
+    const ticketType = findTicketType(typeKey);
 
     if (!ticketType) {
         throw new Error(`Unknown ticket type: ${typeKey}`);
@@ -48,7 +60,7 @@ function buildTicketModal(typeKey) {
  * Creates the buttons shown before opening the form.
  */
 function buildFormPromptButtons(typeKey) {
-    const ticketType = TICKET_TYPES[typeKey];
+    const ticketType = findTicketType(typeKey);
 
     if (!ticketType) {
         throw new Error(`Unknown ticket type: ${typeKey}`);
@@ -110,9 +122,7 @@ function getTicketFormAnswers(interaction) {
         ""
     );
 
-    const ticketType = Object.values(TICKET_TYPES).find(
-        (type) => type.id === typeId
-    );
+    const ticketType = findTicketType(typeId);
 
     if (!ticketType) {
         throw new Error(`Unknown ticket form: ${typeId}`);
