@@ -1,50 +1,44 @@
+
 const {
     SlashCommandBuilder,
-    ChannelType,
-    PermissionFlagsBits
+    PermissionFlagsBits,
+    ChannelType
 } = require("discord.js");
 
-const giveawayCommand = new SlashCommandBuilder()
+const data = new SlashCommandBuilder()
     .setName("giveaway")
-    .setDescription("Manage server giveaways")
+    .setDescription("Manage server giveaways.")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 
     .addSubcommand(subcommand =>
         subcommand
             .setName("start")
-            .setDescription("Create a new giveaway")
+            .setDescription("Start a new giveaway in this channel.")
             .addStringOption(option =>
                 option
                     .setName("prize")
-                    .setDescription("The giveaway prize")
-                    .setRequired(true)
+                    .setDescription("The giveaway prize.")
                     .setMaxLength(200)
+                    .setRequired(true)
             )
             .addStringOption(option =>
                 option
                     .setName("duration")
-                    .setDescription("Duration: 1M, 1H, 1D or 1W")
+                    .setDescription("Duration: 1M, 1H, 1D or 1W.")
                     .setRequired(true)
             )
             .addIntegerOption(option =>
                 option
                     .setName("winners")
-                    .setDescription("Number of winners")
-                    .setRequired(true)
+                    .setDescription("Number of winners.")
                     .setMinValue(1)
                     .setMaxValue(20)
-            )
-            .addChannelOption(option =>
-                option
-                    .setName("channel")
-                    .setDescription("Channel where the giveaway will be posted")
-                    .addChannelTypes(ChannelType.GuildText)
                     .setRequired(true)
             )
             .addAttachmentOption(option =>
                 option
                     .setName("image")
-                    .setDescription("Optional giveaway image")
+                    .setDescription("Optional giveaway image.")
                     .setRequired(false)
             )
     )
@@ -52,11 +46,11 @@ const giveawayCommand = new SlashCommandBuilder()
     .addSubcommand(subcommand =>
         subcommand
             .setName("end")
-            .setDescription("End an active giveaway")
+            .setDescription("End an active giveaway.")
             .addStringOption(option =>
                 option
                     .setName("giveaway_id")
-                    .setDescription("The giveaway ID")
+                    .setDescription("The giveaway ID.")
                     .setRequired(true)
             )
     )
@@ -64,13 +58,15 @@ const giveawayCommand = new SlashCommandBuilder()
     .addSubcommand(subcommand =>
         subcommand
             .setName("cancel")
-            .setDescription("Cancel an active giveaway")
+            .setDescription("Cancel an active giveaway.")
             .addStringOption(option =>
                 option
                     .setName("giveaway_id")
-                    .setDescription("The giveaway ID")
+                    .setDescription("The giveaway ID.")
                     .setRequired(true)
             )
     );
 
-module.exports = { giveawayCommand };
+module.exports = {
+    data
+};
