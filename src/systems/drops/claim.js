@@ -13,7 +13,26 @@ async function claimDrop(interaction, dropId) {
     const db = getDatabase();
     const drops = db.collection(DROP_SETTINGS.COLLECTION);
 
-    // Atomically allow only the first user to claim the drop.
+    const drop = await drops.findOne({
+        _id: dropId,
+        guildId: interaction.guildId
+    });
+
+    if (!drop) {
+        return interaction.reply({
+            content: "❌ This drop does not exist.",
+            ephemeral: true
+        });
+    }
+
+    if (drop.status !== DROP_SETTINGS.STATUS.ACTIVE) {
+        return interaction.reply({
+            content: "❌ This drop is no longer active.",
+            ephemeral: true
+        });
+    }
+
+    // Only one user can win, even if multiple people click simultaneously.
     const result = await drops.updateOne(
         {
             _id: dropId,
@@ -32,86 +51,41 @@ async function claimDrop(interaction, dropId) {
     );
 
     if (result.modifiedCount !== 1) {
-        const existingDrop = await drops.findOne({
-            _id: dropId,
-            guildId: interaction.guildId
-        });
-
-        if (!existingDrop) {
-            return interaction.reply({
-                content: "❌ This drop does not exist.",
-                ephemeral: true
-            });
-        }
-
-        if (existingDrop.winnerId) {
-            return interaction.reply({
-                content: `❌ This drop has already been claimed by <@${existingDrop.winnerId}>.`,
-                ephemeral: true
-            });
-        }
-
         return interaction.reply({
-            content: "❌ This drop is no longer active.",
+            content: "❌ Someone else has already claimed this drop!",
             ephemeral: true
         });
     }
 
-    const channel = await interaction.guild.channels
-        .fetch(interaction.channelId)
-        .catch(() => null);
+    const embed = new EmbedBuilder()
+        .setTitle("🎉 DROP CLAIMED!")
+        .setDescription(
+            `**Prize:** ${drop.prize}\n\n` +
+            `**Winner:** <@${interaction.user.id}>\n\n` +
+            `Congratulations!`
+        )
+        .setColor(0x22C55E)
+        .setTimestamp();
 
-    let message = null;
-
-    if (channel && existingMessageId(dropId)) {
-        // The message is fetched below using the saved message ID.
-        message = await channel.messages
-            .fetch(existingMessageId(dropId))
-            .catch(() => null);
+    if (drop.imageUrl) {
+        embed.setImage(drop.imageUrl);
     }
 
-    if (message) {
-        const oldEmbed = message.embeds[0];
+    const disabledRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`${DROP_SETTINGS.CLAIM_BUTTON_ID}:${dropId}`)
+            .setLabel("Claimed")
+            .setEmoji("🎉")
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(true)
+    );
 
-        const embed = oldEmbed
-            ? EmbedBuilder.from(oldEmbed)
-            : new EmbedBuilder().setTitle("DROP ENDED");
-
-        embed
-            .setTitle("🎉 DROP CLAIMED!")
-            .setColor(0x22C55E)
-            .addFields({
-                name: "Winner",
-                value: `<@${interaction.user.id}>`,
-                inline: false
-            })
-            .setTimestamp();
-
-        const disabledRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`${DROP_SETTINGS.CLAIM_BUTTON_ID}:${dropId}`)
-                .setLabel("Claimed")
-                .setStyle(ButtonStyle.Success)
-                .setEmoji("🎉")
-                .setDisabled(true)
-        );
-
-        await message.edit({
-            embeds: [embed],
-            components: [disabledRow]
-        }).catch(console.error);
-    }
-
-    return interaction.reply({
-        content: `🎉 Congratulations <@${interaction.user.id}>! You won **${(await drops.findOne({ _id: dropId }))?.prize || "the drop"}**!`,
-        allowedMentions: {
-            users: [interaction.user.id]
-        }
+    await interaction.update({
+        embeds: [embed],
+        components: [disabledRow]
     });
-}
 
-function existingMessageId() {
-    return null;
+    return true;
 }
 
 module.exports = {
