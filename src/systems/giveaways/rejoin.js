@@ -10,54 +10,50 @@ const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
 
-async function createRejoinRequest(client, giveawayId, userId) {
-    if (!ObjectId.isValid(giveawayId)) {
-        return { success: false, reason: "INVALID_ID" };
-    }
-
+async function createRejoinRequest(client, giveaway, userId) {
     const db = getDatabase();
-    const giveaways = db.collection(GIVEAWAY_SETTINGS.COLLECTION);
+    const collection = db.collection(GIVEAWAY_SETTINGS.COLLECTION);
 
-    const giveaway = await giveaways.findOne({
+    const giveawayId = giveaway._id.toString();
+
+    const currentGiveaway = await collection.findOne({
         _id: new ObjectId(giveawayId),
         status: GIVEAWAY_SETTINGS.STATUS.ACTIVE,
         removedParticipants: userId
     });
 
-    if (!giveaway) {
+    if (!currentGiveaway) {
         return { success: false, reason: "NOT_REMOVED" };
     }
 
-    const requests = db.collection("giveawayRejoinRequests");
-
-    const existingRequest = await requests.findOne({
+    const existingRequest = await db.collection("giveaway_rejoin_requests").findOne({
         giveawayId,
         userId,
         status: "pending"
     });
 
     if (existingRequest) {
-        return { success: false, reason: "REQUEST_PENDING" };
+        return { success: false, reason: "REQUEST_ALREADY_PENDING" };
     }
 
     const request = {
         giveawayId,
-        userId,
         guildId: giveaway.guildId,
+        channelId: giveaway.channelId,
+        userId,
         status: "pending",
         createdAt: new Date()
     };
 
-    const result = await requests.insertOne(request);
+    const result = await db.collection("giveaway_rejoin_requests").insertOne(request);
     const requestId = result.insertedId.toString();
 
-    const guild = await client.guilds.fetch(giveaway.guildId);
-    const channel = await guild.channels.fetch(giveaway.channelId);
+    const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
 
-    if (!channel || !channel.isTextBased()) {
-        await requests.updateOne(
+    if (!channel) {
+        await db.collection("giveaway_rejoin_requests").updateOne(
             { _id: result.insertedId },
-            { $set: { status: "failed" } }
+            { $set: { status: "failed", updatedAt: new Date() } }
         );
 
         return { success: false, reason: "CHANNEL_NOT_FOUND" };
@@ -67,134 +63,156 @@ async function createRejoinRequest(client, giveawayId, userId) {
         .setColor(0xF59E0B)
         .setTitle("🔔 Giveaway Rejoin Request")
         .setDescription(
-            [
-                `**User:** <@${userId}>`,
-                `**Prize:** ${giveaway.prize}`,
-                "",
-                "This user was previously removed from the giveaway.",
-                "An administrator must approve or deny their request to rejoin."
-            ].join("\n")
+            `<@${userId}> wants to rejoin this giveaway.\n\n` +
+            `**Giveaway:** ${giveaway.prize}\n` +
+            `**User:** <@${userId}>`
         )
+        .setFooter({ text: "Only server administrators can approve this request." })
         .setTimestamp();
 
-    const buttons = new ActionRowBuilder().addComponents(
+    const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`giveaway_rejoin_approve:${requestId}`)
-            .setLabel("APPROVE")
+            .setLabel("Approve")
             .setStyle(ButtonStyle.Success),
-
         new ButtonBuilder()
             .setCustomId(`giveaway_rejoin_deny:${requestId}`)
-            .setLabel("DENY")
+            .setLabel("Deny")
             .setStyle(ButtonStyle.Danger)
     );
 
-    await channel.send({
-        embeds: [embed],
-        components: [buttons]
-    });
+    try {
+        await channel.send({
+            embeds: [embed],
+            components: [row]
+        });
+    } catch (error) {
+        await db.collection("giveaway_rejoin_requests").updateOne(
+            { _id: result.insertedId },
+            { $set: { status: "failed", updatedAt: new Date() } }
+        );
 
-    return { success: true };
+        throw error;
+    }
+
+    return { success: true, requestId };
 }
 
 async function handleRejoinApproval(interaction) {
-    const [action, requestId] = interaction.customId.split(":");
+    const isAdmin = interaction.memberPermissions?.has(
+        PermissionFlagsBits.ManageGuild
+    );
 
-    if (!interaction.memberPermissions?.has(
-        PermissionFlagsBits.Administrator
-    )) {
-        return interaction.reply({
-            content: "❌ Only administrators can review rejoin requests.",
+    if (!isAdmin) {
+        await interaction.reply({
+            content: "You don't have permission to manage giveaway requests.",
             ephemeral: true
         });
+        return;
     }
 
+    const [action, requestId] = interaction.customId.split(":");
+
     if (!ObjectId.isValid(requestId)) {
-        return interaction.reply({
-            content: "❌ Invalid request.",
+        await interaction.reply({
+            content: "Invalid request.",
             ephemeral: true
         });
+        return;
     }
 
     const db = getDatabase();
-    const requests = db.collection("giveawayRejoinRequests");
+    const requests = db.collection("giveaway_rejoin_requests");
+    const requestObjectId = new ObjectId(requestId);
 
     const request = await requests.findOne({
-        _id: new ObjectId(requestId),
+        _id: requestObjectId,
         status: "pending"
     });
 
     if (!request) {
-        return interaction.reply({
-            content: "❌ This request has already been handled or does not exist.",
+        await interaction.reply({
+            content: "This request has already been handled or does not exist.",
             ephemeral: true
         });
+        return;
     }
 
-    if (action === "giveaway_rejoin_approve") {
-        const result = await db.collection(
-            GIVEAWAY_SETTINGS.COLLECTION
-        ).updateOne(
+    const newStatus = action === "giveaway_rejoin_approve"
+        ? "approved"
+        : "denied";
+
+    const updateResult = await requests.updateOne(
+        {
+            _id: requestObjectId,
+            status: "pending"
+        },
+        {
+            $set: {
+                status: newStatus,
+                handledBy: interaction.user.id,
+                handledAt: new Date()
+            }
+        }
+    );
+
+    if (updateResult.modifiedCount !== 1) {
+        await interaction.reply({
+            content: "Another administrator already handled this request.",
+            ephemeral: true
+        });
+        return;
+    }
+
+    if (newStatus === "approved") {
+        const giveawayCollection = db.collection(GIVEAWAY_SETTINGS.COLLECTION);
+
+        const updateGiveaway = await giveawayCollection.updateOne(
             {
                 _id: new ObjectId(request.giveawayId),
                 status: GIVEAWAY_SETTINGS.STATUS.ACTIVE,
                 removedParticipants: request.userId
             },
             {
-                $addToSet: { participants: request.userId },
-                $pull: { removedParticipants: request.userId }
+                $pull: { removedParticipants: request.userId },
+                $addToSet: { participants: request.userId }
             }
         );
 
-        if (result.modifiedCount === 0) {
-            await requests.updateOne(
-                { _id: request._id, status: "pending" },
-                { $set: { status: "failed", reviewedAt: new Date() } }
-            );
-
-            return interaction.reply({
-                content: "❌ The giveaway is no longer active or the request is invalid.",
+        if (updateGiveaway.modifiedCount !== 1) {
+            await interaction.reply({
+                content: "The giveaway has ended or the user is no longer eligible to rejoin.",
                 ephemeral: true
             });
+            return;
         }
-
-        await requests.updateOne(
-            { _id: request._id, status: "pending" },
-            {
-                $set: {
-                    status: "approved",
-                    reviewedBy: interaction.user.id,
-                    reviewedAt: new Date()
-                }
-            }
-        );
-
-        await interaction.update({
-            content: `✅ <@${request.userId}> was approved to rejoin the giveaway.`,
-            embeds: [],
-            components: []
-        });
-
-        return;
     }
 
-    if (action === "giveaway_rejoin_deny") {
-        await requests.updateOne(
-            { _id: request._id, status: "pending" },
-            {
-                $set: {
-                    status: "denied",
-                    reviewedBy: interaction.user.id,
-                    reviewedAt: new Date()
-                }
-            }
-        );
-
-        await interaction.update({
-            content: `❌ <@${request.userId}>'s rejoin request was denied.`,
-            embeds: [],
-            components: []
+    const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+        .setColor(newStatus === "approved" ? 0x22C55E : 0xEF4444)
+        .setTitle(
+            newStatus === "approved"
+                ? "✅ Rejoin Request Approved"
+                : "❌ Rejoin Request Denied"
+        )
+        .addFields({
+            name: "Handled By",
+            value: `<@${interaction.user.id}>`
         });
+
+    await interaction.update({
+        embeds: [updatedEmbed],
+        components: []
+    });
+
+    const user = await interaction.client.users.fetch(request.userId).catch(() => null);
+
+    if (user) {
+        await user.send(
+            newStatus === "approved"
+                ? "Your request to rejoin the giveaway was approved!"
+                : "Your request to rejoin the giveaway was denied."
+        ).catch(() => {});
     }
 }
 
