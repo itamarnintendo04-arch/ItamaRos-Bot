@@ -30,7 +30,6 @@ async function finishGiveaway(client, giveaway, winners) {
                 userId: winnerId,
                 ...result
             });
-
         } catch (error) {
             console.error(
                 `[Giveaways] Could not create winner ticket for ${winnerId}:`,
@@ -51,7 +50,8 @@ async function finishGiveaway(client, giveaway, winners) {
         notifications = await notifyGiveawayWinners(
             client,
             giveaway,
-            winners
+            winners,
+            ticketResults
         );
     }
 
