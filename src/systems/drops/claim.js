@@ -6,15 +6,24 @@ const {
     ButtonStyle
 } = require("discord.js");
 
+const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { DROP_SETTINGS } = require("./config");
 
 async function claimDrop(interaction, dropId) {
+    if (!ObjectId.isValid(dropId)) {
+        return interaction.reply({
+            content: "❌ Invalid drop ID.",
+            ephemeral: true
+        });
+    }
+
     const db = getDatabase();
     const drops = db.collection(DROP_SETTINGS.COLLECTION);
+    const objectId = new ObjectId(dropId);
 
     const drop = await drops.findOne({
-        _id: dropId,
+        _id: objectId,
         guildId: interaction.guildId
     });
 
@@ -25,17 +34,9 @@ async function claimDrop(interaction, dropId) {
         });
     }
 
-    if (drop.status !== DROP_SETTINGS.STATUS.ACTIVE) {
-        return interaction.reply({
-            content: "❌ This drop is no longer active.",
-            ephemeral: true
-        });
-    }
-
-    // Only one user can win, even if multiple people click simultaneously.
     const result = await drops.updateOne(
         {
-            _id: dropId,
+            _id: objectId,
             guildId: interaction.guildId,
             status: DROP_SETTINGS.STATUS.ACTIVE,
             winnerId: null
@@ -62,7 +63,7 @@ async function claimDrop(interaction, dropId) {
         .setDescription(
             `**Prize:** ${drop.prize}\n\n` +
             `**Winner:** <@${interaction.user.id}>\n\n` +
-            `Congratulations!`
+            "Congratulations!"
         )
         .setColor(0x22C55E)
         .setTimestamp();
