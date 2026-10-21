@@ -1,142 +1,288 @@
 
-const { PermissionFlagsBits } = require("discord.js");
+const {
+    PermissionFlagsBits,
+    MessageFlags
+} = require("discord.js");
 
+const { ObjectId } = require("mongodb");
+const { getDatabase } = require("../../../database");
+
+const { GIVEAWAY_SETTINGS } = require("./config");
 const { createGiveaway } = require("./create");
-const { endGiveaway } = require("./finish");
-const { cancelGiveaway } = require("./cancel");
-const { handleGiveawayButton } = require("./buttons");
+const { forceEndGiveaway } = require("./end");
+const { finishGiveaway } = require("./finish");
+
+const {
+    cancelGiveaway,
+    disableCancelledGiveaway
+} = require("./cancel");
+
+const { handleGiveawayButtons } = require("./buttons");
+const { handleRejoinApproval } = require("./rejoin");
 
 function parseDuration(value) {
-    const match = /^(\d+)(M|H|D|W)$/i.exec(value);
+    if (typeof value !== "string") return null;
 
+    const match = value.trim().match(/^(\d+)\s*([mhdw])$/i);
     if (!match) return null;
 
     const amount = Number(match[1]);
-    const unit = match[2].toUpperCase();
-
-    if (!Number.isSafeInteger(amount) || amount < 1) return null;
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+        return null;
+    }
 
     const multipliers = {
-        M: 1,
-        H: 60,
-        D: 1440,
-        W: 10080
+        m: 1,
+        h: 60,
+        d: 1440,
+        w: 10080
     };
 
-    const minutes = amount * multipliers[unit];
+    const minutes = amount * multipliers[match[2].toLowerCase()];
 
-    return Number.isSafeInteger(minutes) ? minutes : null;
+    if (
+        !Number.isSafeInteger(minutes) ||
+        minutes < GIVEAWAY_SETTINGS.MIN_DURATION_MINUTES
+    ) {
+        return null;
+    }
+
+    return minutes;
 }
 
 async function handleGiveawayInteraction(interaction) {
     try {
-        if (interaction.isChatInputCommand()) {
-            if (interaction.commandName !== "giveaway") return;
+        if (interaction.isButton()) {
+            const customId = interaction.customId;
 
-            if (!interaction.memberPermissions?.has(
-                PermissionFlagsBits.ManageGuild
-            )) {
-                return interaction.reply({
-                    content: "❌ You need the Manage Server permission.",
-                    ephemeral: true
-                });
+            if (
+                customId.startsWith(`${GIVEAWAY_SETTINGS.JOIN_BUTTON_ID}:`) ||
+                customId.startsWith(`${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:`)
+            ) {
+                return await handleGiveawayButtons(interaction);
             }
 
-            const subcommand = interaction.options.getSubcommand();
+            if (
+                customId.startsWith("giveaway_rejoin_") ||
+                customId.startsWith("rejoin_")
+            ) {
+                return await handleRejoinApproval(interaction);
+            }
 
-            if (subcommand === "start") {
-                const prize = interaction.options.getString("prize");
-                const durationInput = interaction.options.getString("duration");
-                const winners = interaction.options.getInteger("winners");
-                const image = interaction.options.getAttachment("image");
+            return false;
+        }
 
-                const duration = parseDuration(durationInput);
+        if (!interaction.isChatInputCommand()) {
+            return false;
+        }
 
-                if (!duration) {
-                    return interaction.reply({
-                        content: "❌ Invalid duration. Use 1M, 1H, 1D or 1W.",
-                        ephemeral: true
-                    });
-                }
+        if (interaction.commandName !== "giveaway") {
+            return false;
+        }
 
-                if (
-                    image &&
-                    (!image.contentType ||
-                    !image.contentType.startsWith("image/"))
-                ) {
-                    return interaction.reply({
-                        content: "❌ The attachment must be an image.",
-                        ephemeral: true
-                    });
-                }
+        if (!interaction.inGuild()) {
+            await interaction.reply({
+                content: "This command can only be used in a server.",
+                flags: MessageFlags.Ephemeral
+            });
+            return true;
+        }
 
-                if (!interaction.channel?.isTextBased()) {
-                    return interaction.reply({
-                        content: "❌ Giveaways can only be created in a text channel.",
-                        ephemeral: true
-                    });
-                }
+        if (
+            !interaction.memberPermissions?.has(
+                PermissionFlagsBits.ManageGuild
+            )
+        ) {
+            await interaction.reply({
+                content: "You need the Manage Server permission to manage giveaways.",
+                flags: MessageFlags.Ephemeral
+            });
+            return true;
+        }
 
-                await interaction.deferReply({ ephemeral: true });
+        const subcommand = interaction.options.getSubcommand();
 
-                await createGiveaway({
-                    guild: interaction.guild,
-                    channel: interaction.channel,
-                    host: interaction.user,
-                    prize,
-                    duration,
-                    winners,
-                    image
+        await interaction.deferReply({
+            flags: MessageFlags.Ephemeral
+        });
+
+        if (subcommand === "start") {
+            const prize = interaction.options.getString("prize", true);
+            const durationValue = interaction.options.getString("duration", true);
+            const winners = interaction.options.getInteger("winners", true);
+            const image = interaction.options.getAttachment("image");
+
+            const duration = parseDuration(durationValue);
+
+            if (duration === null) {
+                await interaction.editReply({
+                    content: "Invalid duration. Use a format such as 30m, 2h, 1d or 1w."
                 });
+                return true;
+            }
 
-                return interaction.editReply({
-                    content: `✅ Giveaway created successfully in ${interaction.channel}!`
+            if (
+                winners < 1 ||
+                winners > GIVEAWAY_SETTINGS.MAX_WINNERS
+            ) {
+                await interaction.editReply({
+                    content: `The number of winners must be between 1 and ${GIVEAWAY_SETTINGS.MAX_WINNERS}.`
                 });
+                return true;
+            }
+
+            if (
+                image &&
+                !image.contentType?.startsWith("image/")
+            ) {
+                await interaction.editReply({
+                    content: "Please upload a valid image attachment."
+                });
+                return true;
+            }
+
+            if (!interaction.channel?.isTextBased()) {
+                await interaction.editReply({
+                    content: "Giveaways can only be created in text channels."
+                });
+                return true;
+            }
+
+            const result = await createGiveaway({
+                guild: interaction.guild,
+                channel: interaction.channel,
+                host: interaction.user,
+                prize,
+                duration,
+                winners,
+                image
+            });
+
+            if (!result || result.success === false) {
+                await interaction.editReply({
+                    content: "Could not create the giveaway. Please check the bot permissions."
+                });
+                return true;
+            }
+
+            await interaction.editReply({
+                content: "🎉 Giveaway created successfully!"
+            });
+
+            return true;
+        }
+
+        if (subcommand === "end" || subcommand === "cancel") {
+            const giveawayId = interaction.options.getString(
+                "giveaway_id",
+                true
+            );
+
+            if (!ObjectId.isValid(giveawayId)) {
+                await interaction.editReply({
+                    content: "Invalid giveaway ID."
+                });
+                return true;
+            }
+
+            const collection = getDatabase().collection(
+                GIVEAWAY_SETTINGS.COLLECTION
+            );
+
+            const existing = await collection.findOne({
+                _id: new ObjectId(giveawayId),
+                guildId: interaction.guildId
+            });
+
+            if (!existing) {
+                await interaction.editReply({
+                    content: "This giveaway was not found in this server."
+                });
+                return true;
+            }
+
+            if (existing.status !== GIVEAWAY_SETTINGS.STATUS.ACTIVE) {
+                await interaction.editReply({
+                    content: "This giveaway is no longer active."
+                });
+                return true;
             }
 
             if (subcommand === "end") {
-                const giveawayId = interaction.options.getString("giveaway_id");
+                const result = await forceEndGiveaway(giveawayId);
 
-                await interaction.deferReply({ ephemeral: true });
+                if (!result.success) {
+                    await interaction.editReply({
+                        content: "The giveaway could not be ended. It may already have finished."
+                    });
+                    return true;
+                }
 
-                await endGiveaway(interaction.client, giveawayId);
+                const finishResult = await finishGiveaway(
+                    interaction.client,
+                    result.giveaway,
+                    result.winners
+                );
 
-                return interaction.editReply({
-                    content: "✅ Giveaway ended successfully."
+                await interaction.editReply({
+                    content: finishResult.announcementSent
+                        ? "🎉 The giveaway has ended and the winner announcement was sent."
+                        : "The giveaway has ended, but the public announcement could not be completed. Check the bot logs."
                 });
+
+                return true;
             }
 
-            if (subcommand === "cancel") {
-                const giveawayId = interaction.options.getString("giveaway_id");
+            const result = await cancelGiveaway(giveawayId);
 
-                await interaction.deferReply({ ephemeral: true });
-
-                await cancelGiveaway(interaction.client, giveawayId);
-
-                return interaction.editReply({
-                    content: "✅ Giveaway cancelled successfully."
+            if (!result.success) {
+                await interaction.editReply({
+                    content: "The giveaway could not be cancelled. It may already have finished."
                 });
+                return true;
             }
+
+            const messageUpdated = await disableCancelledGiveaway(
+                interaction.client,
+                result.giveaway
+            );
+
+            await interaction.editReply({
+                content: messageUpdated
+                    ? "🚫 Giveaway cancelled successfully."
+                    : "The giveaway was cancelled, but the original message could not be updated."
+            });
+
+            return true;
         }
 
-        if (interaction.isButton()) {
-            return handleGiveawayButton(interaction);
-        }
+        await interaction.editReply({
+            content: "Unknown giveaway subcommand."
+        });
+
+        return true;
     } catch (error) {
-        console.error("[GIVEAWAYS] Interaction error:", error);
+        console.error("[Giveaways] Interaction error:", error);
 
-        const message = "❌ Something went wrong while processing the giveaway.";
+        const content = "❌ An unexpected error occurred while processing the giveaway.";
 
-        if (interaction.deferred || interaction.replied) {
-            return interaction.editReply({
-                content: message
-            }).catch(() => {});
+        try {
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content });
+            } else {
+                await interaction.reply({
+                    content,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        } catch (replyError) {
+            console.error(
+                "[Giveaways] Failed to respond to interaction:",
+                replyError
+            );
         }
 
-        return interaction.reply({
-            content: message,
-            ephemeral: true
-        }).catch(() => {});
+        return true;
     }
 }
 
