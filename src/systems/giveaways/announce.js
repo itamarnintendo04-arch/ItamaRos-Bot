@@ -1,4 +1,6 @@
 
+"use strict";
+
 const {
     ActionRowBuilder,
     ButtonBuilder,
@@ -12,35 +14,57 @@ const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
 
+const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
+
 const COLORS = Object.freeze({
-    SUCCESS: 0x22C55E,
     ENDED: 0x64748B,
+    SUCCESS: 0x22C55E,
     EMPTY: 0xF59E0B
 });
 
-const LOCK_DURATION_MS = 120_000;
-
-function getCollection() {
+function collection() {
     return getDatabase().collection(
         GIVEAWAY_SETTINGS.COLLECTION
     );
 }
 
-function getWinnerIds(giveaway) {
+function validId(value) {
+    return typeof value === "string" &&
+        /^[a-fA-F0-9]{24}$/.test(value);
+}
+
+function safePrize(value) {
+    return String(value || "Unknown Prize")
+        .replace(/@/g, "@\u200b")
+        .slice(0, 200);
+}
+
+function getWinners(giveaway) {
+    const winners = Array.isArray(giveaway.winners)
+        ? giveaway.winners
+        : [];
+
     return [
         ...new Set(
-            (Array.isArray(giveaway.winners)
-                ? giveaway.winners
-                : []
-            ).filter(id =>
-                typeof id === "string" &&
-                /^\d{17,20}$/.test(id)
+            winners.filter(
+                id => typeof id === "string" &&
+                    /^\d{17,20}$/.test(id)
             )
         )
     ];
 }
 
-function buildDisabledButtons(giveawayId) {
+function getEndDate(giveaway) {
+    const date = new Date(
+        giveaway.endedAt || giveaway.endsAt
+    );
+
+    return Number.isFinite(date.getTime())
+        ? date
+        : new Date();
+}
+
+function disabledButtons(giveawayId) {
     return [
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -64,55 +88,48 @@ function buildDisabledButtons(giveawayId) {
     ];
 }
 
-function buildEndedEmbed(giveaway, winners) {
-    const hasWinners = winners.length > 0;
+function buildResultsEmbed(giveaway, winners) {
+    const endDate = getEndDate(giveaway);
+    const timestamp = Math.floor(
+        endDate.getTime() / 1000
+    );
 
-    const winnerText = hasWinners
-        ? winners.map(id => `<@${id}>`).join("\n")
-        : "No winners — there were no eligible entries.";
-
-    const participantCount = Array.isArray(
-        giveaway.participants
-    )
+    const count = Array.isArray(giveaway.participants)
         ? giveaway.participants.length
         : 0;
 
-    const endedAt = giveaway.endedAt
-        ? new Date(giveaway.endedAt)
-        : new Date();
-
-    const timestamp = Math.floor(
-        endedAt.getTime() / 1000
-    );
+    const winnerText = winners.length
+        ? winners.map(id => `<@${id}>`).join("\n")
+        : "No eligible winners.";
 
     const embed = new EmbedBuilder()
         .setColor(
-            hasWinners
+            winners.length
                 ? COLORS.ENDED
                 : COLORS.EMPTY
         )
-        .setTitle("🎉 GIVEAWAY ENDED")
-        .setDescription(
-            [
-                "## 🎁 Giveaway Results",
-                "",
-                `**Prize:** ${giveaway.prize}`,
-                "",
-                `**Hosted by:** <@${giveaway.hostId}>`,
-                "",
-                "**🏆 Winner(s)**",
-                winnerText,
-                "",
-                `**👥 Total Entries:** ${participantCount}`,
-                `**🕒 Ended:** <t:${timestamp}:F>`
-            ].join("\n")
-        )
+        .setTitle("🏁 GIVEAWAY ENDED")
+        .setDescription([
+            `## 🎁 ${safePrize(giveaway.prize)}`,
+            "",
+            "### 🏆 Winners",
+            winnerText,
+            "",
+            `**👑 Hosted by:** <@${giveaway.hostId}>`,
+            `**👥 Total Entries:** ${count}`,
+            `**📅 Ended:** <t:${timestamp}:F>`,
+            "",
+            "**Status:** Completed"
+        ].join("\n"))
         .setFooter({
             text: "ItamaRos Bot • Giveaway Results"
         })
-        .setTimestamp(endedAt);
+        .setTimestamp(endDate);
 
-    if (giveaway.imageUrl) {
+    if (
+        typeof giveaway.imageUrl === "string" &&
+        /^https:\/\//i.test(giveaway.imageUrl)
+    ) {
         embed.setImage(giveaway.imageUrl);
     }
 
@@ -124,13 +141,12 @@ function buildAnnouncementEmbed(giveaway, winners) {
         return new EmbedBuilder()
             .setColor(COLORS.EMPTY)
             .setTitle("🎁 Giveaway Finished")
-            .setDescription(
-                [
-                    `The giveaway for **${giveaway.prize}** has ended.`,
-                    "",
-                    "There were no eligible participants, so no winners were selected."
-                ].join("\n")
-            )
+            .setDescription([
+                `The giveaway for **${safePrize(giveaway.prize)}** has ended.`,
+                "",
+                "No eligible entries were available.",
+                "No winners were selected."
+            ].join("\n"))
             .setFooter({
                 text: "ItamaRos Bot • Giveaways"
             })
@@ -139,53 +155,64 @@ function buildAnnouncementEmbed(giveaway, winners) {
 
     const mentions = winners.map(
         id => `<@${id}>`
-    ).join(", ");
+    ).join("\n");
 
     return new EmbedBuilder()
         .setColor(COLORS.SUCCESS)
         .setTitle("🏆 GIVEAWAY WINNERS!")
-        .setDescription(
-            [
-                "## 🎉 Congratulations!",
-                "",
-                mentions,
-                "",
-                `You've won **${giveaway.prize}**!`,
-                "",
-                "📩 Check your DMs for information about claiming your prize.",
-                "",
-                "Thank you to everyone who participated!"
-            ].join("\n")
-        )
-        .addFields({
-            name: "🎁 Prize",
-            value: String(giveaway.prize),
-            inline: true
-        })
+        .setDescription([
+            "## 🎉 Congratulations!",
+            "",
+            mentions,
+            "",
+            `**Prize:** ${safePrize(giveaway.prize)}`,
+            "",
+            "You've won an ItamaRos giveaway!",
+            "",
+            "📩 Check your DMs for your winner ticket.",
+            "Our staff will help you claim your reward.",
+            "",
+            "Thank you to everyone who participated!"
+        ].join("\n"))
         .setFooter({
-            text: "ItamaRos Bot • Congratulations!"
+            text: "ItamaRos Bot • Giveaway Winners"
         })
         .setTimestamp();
 }
 
 async function claimAnnouncement(giveawayId) {
-    const collection = getCollection();
-
     const now = new Date();
-    const expiredLock = new Date(
-        now.getTime() - LOCK_DURATION_MS
-    );
-
     const token = randomUUID();
 
-    const claimed = await collection.findOneAndUpdate(
+    const expiredAt = new Date(
+        now.getTime() - LOCK_TIMEOUT_MS
+    );
+
+    const result = await collection().findOneAndUpdate(
         {
             _id: new ObjectId(giveawayId),
             status: GIVEAWAY_SETTINGS.STATUS.ENDED,
-            announcementSentAt: { $exists: false },
+
+            // MongoDB matches both null and missing fields.
+            // Compatible with create.js.
+            announcementSentAt: null,
+
             $or: [
-                { announcementState: { $ne: "processing" } },
-                { announcementClaimedAt: { $lt: expiredLock } }
+                {
+                    announcementState: {
+                        $ne: "processing"
+                    }
+                },
+                {
+                    announcementClaimedAt: {
+                        $lt: expiredAt
+                    }
+                },
+                {
+                    announcementClaimedAt: {
+                        $exists: false
+                    }
+                }
             ]
         },
         {
@@ -200,13 +227,18 @@ async function claimAnnouncement(giveawayId) {
         }
     );
 
-    return claimed
-        ? { giveaway: claimed, token }
-        : null;
+    if (!result || result.announcementToken !== token) {
+        return null;
+    }
+
+    return {
+        giveaway: result,
+        token
+    };
 }
 
 async function releaseAnnouncement(giveawayId, token) {
-    await getCollection().updateOne(
+    await collection().updateOne(
         {
             _id: new ObjectId(giveawayId),
             announcementToken: token,
@@ -225,7 +257,7 @@ async function releaseAnnouncement(giveawayId, token) {
     );
 }
 
-async function editOriginalGiveaway(
+async function editOriginalMessage(
     channel,
     giveaway,
     winners
@@ -240,14 +272,13 @@ async function editOriginalGiveaway(
         );
 
         await message.edit({
+            content: "🏁 **This giveaway has ended.**",
             embeds: [
-                buildEndedEmbed(giveaway, winners)
+                buildResultsEmbed(giveaway, winners)
             ],
-            components: [
-                ...buildDisabledButtons(
-                    giveaway._id.toString()
-                )
-            ],
+            components: disabledButtons(
+                giveaway._id.toString()
+            ),
             allowedMentions: {
                 parse: []
             }
@@ -256,7 +287,7 @@ async function editOriginalGiveaway(
         return true;
     } catch (error) {
         console.error(
-            "[Giveaways] Could not edit original giveaway:",
+            "[Giveaways] Original message update failed:",
             error
         );
 
@@ -264,11 +295,27 @@ async function editOriginalGiveaway(
     }
 }
 
-async function sendPublicAnnouncement(
+async function ensurePublicAnnouncement(
     channel,
     giveaway,
-    winners
+    winners,
+    token
 ) {
+    // Reuse the announcement from an earlier attempt.
+    if (giveaway.announcementMessageId) {
+        const existing = await channel.messages.fetch(
+            giveaway.announcementMessageId
+        ).catch(() => null);
+
+        if (existing) {
+            return {
+                success: true,
+                messageId: existing.id,
+                reused: true
+            };
+        }
+    }
+
     const embed = buildAnnouncementEmbed(
         giveaway,
         winners
@@ -287,7 +334,32 @@ async function sendPublicAnnouncement(
         }
     });
 
-    return message.id;
+    // Save the reference immediately after sending.
+    const saved = await collection().updateOne(
+        {
+            _id: giveaway._id,
+            announcementToken: token,
+            announcementState: "processing"
+        },
+        {
+            $set: {
+                announcementMessageId: message.id,
+                announcementMessageCreatedAt: new Date()
+            }
+        }
+    );
+
+    if (saved.modifiedCount !== 1) {
+        throw new Error(
+            "Announcement was sent but its message ID could not be confirmed."
+        );
+    }
+
+    return {
+        success: true,
+        messageId: message.id,
+        reused: false
+    };
 }
 
 async function announceGiveawayEnd(
@@ -301,32 +373,38 @@ async function announceGiveawayEnd(
 
     const giveawayId = giveaway._id.toString();
 
-    if (!ObjectId.isValid(giveawayId)) {
+    if (!validId(giveawayId)) {
         return false;
     }
 
-    // Claim the job atomically so manual and scheduled
-    // endings do not normally announce the same giveaway twice.
-    const claim = await claimAnnouncement(
-        giveawayId
-    );
+    let claim;
+
+    try {
+        claim = await claimAnnouncement(giveawayId);
+    } catch (error) {
+        console.error(
+            "[Giveaways] Failed to claim announcement:",
+            error
+        );
+
+        return false;
+    }
 
     if (!claim) {
-        const current = await getCollection().findOne({
+        const current = await collection().findOne({
             _id: new ObjectId(giveawayId)
         });
 
-        if (current?.announcementSentAt) {
-            console.log(
-                `[Giveaways] Announcement already completed: ${giveawayId}`
-            );
+        // Already successfully completed.
+        if (
+            current?.status === GIVEAWAY_SETTINGS.STATUS.ENDED &&
+            current.announcementSentAt
+        ) {
             return true;
         }
 
-        console.log(
-            `[Giveaways] Announcement unavailable or processing: ${giveawayId}`
-        );
-
+        // Another process is handling it, or the
+        // giveaway has not reached the ended state.
         return false;
     }
 
@@ -336,96 +414,93 @@ async function announceGiveawayEnd(
     try {
         const guild = await client.guilds.fetch(
             current.guildId
-        ).catch(() => null);
-
-        if (!guild) {
-            throw new Error("Giveaway guild not found.");
-        }
+        );
 
         const channel = await guild.channels.fetch(
             current.channelId
-        ).catch(() => null);
+        );
 
         if (
             !channel?.isTextBased() ||
             !channel.messages ||
             !channel.send
         ) {
-            throw new Error("Giveaway channel unavailable.");
-        }
-
-        // Use winners saved in MongoDB as the source of truth,
-        // rather than an older copy passed to this function.
-        const finalWinners = getWinnerIds(current);
-
-        // Editing the old message and sending the new
-        // announcement are independent operations.
-        const originalUpdated = await editOriginalGiveaway(
-            channel,
-            current,
-            finalWinners
-        );
-
-        let announcementMessageId =
-            current.announcementMessageId || null;
-
-        if (!announcementMessageId) {
-            announcementMessageId =
-                await sendPublicAnnouncement(
-                    channel,
-                    current,
-                    finalWinners
-                );
-
-            // Store the new message ID so a retry can
-            // reuse the existing public announcement.
-            await getCollection().updateOne(
-                {
-                    _id: current._id,
-                    announcementToken: token
-                },
-                {
-                    $set: {
-                        announcementMessageId
-                    }
-                }
+            throw new Error(
+                "The giveaway channel is unavailable."
             );
         }
 
-        const updateResult = await getCollection().updateOne(
+        // Always trust the final winners stored
+        // in MongoDB by end.js.
+        const confirmedWinners = getWinners(current);
+
+        // The original panel and the announcement
+        // are separate operations.
+        const originalUpdated = await editOriginalMessage(
+            channel,
+            current,
+            confirmedWinners
+        );
+
+        const announcement = await ensurePublicAnnouncement(
+            channel,
+            current,
+            confirmedWinners,
+            token
+        );
+
+        if (!originalUpdated) {
+            // Keep the announcement message ID.
+            // A later retry can fix the old panel
+            // without sending another announcement.
+            throw new Error(
+                "The public announcement was sent, but the original giveaway message still needs updating."
+            );
+        }
+
+        if (!announcement.success) {
+            throw new Error(
+                "The public announcement was not confirmed."
+            );
+        }
+
+        const completedAt = new Date();
+
+        const saved = await collection().updateOne(
             {
                 _id: current._id,
+                status: GIVEAWAY_SETTINGS.STATUS.ENDED,
                 announcementToken: token,
                 announcementState: "processing"
             },
             {
                 $set: {
                     announcementState: "completed",
-                    announcementSentAt: new Date(),
-                    originalMessageUpdated: originalUpdated
+                    announcementSentAt: completedAt,
+                    originalMessageUpdated: true
                 },
                 $unset: {
                     announcementToken: "",
-                    announcementClaimedAt: ""
+                    announcementClaimedAt: "",
+                    announcementFailedAt: ""
                 }
             }
         );
 
-        if (updateResult.modifiedCount !== 1) {
-            console.error(
-                `[Giveaways] Lost announcement claim: ${giveawayId}`
+        if (saved.modifiedCount !== 1) {
+            throw new Error(
+                "Could not confirm announcement completion."
             );
-            return false;
         }
 
         console.log(
-            `[Giveaways] Winner announcement completed: ${giveawayId}`
+            `[Giveaways] Announcement completed: ${giveawayId}`
         );
 
         return true;
     } catch (error) {
         console.error(
-            `[Giveaways] Announcement failed: ${giveawayId}`,
+            `[Giveaways] Announcement incomplete: ${giveawayId}`,
             error
         );
 
@@ -434,7 +509,7 @@ async function announceGiveawayEnd(
             token
         ).catch(releaseError => {
             console.error(
-                "[Giveaways] Failed to release announcement lock:",
+                "[Giveaways] Could not release announcement lock:",
                 releaseError
             );
         });
