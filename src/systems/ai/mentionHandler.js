@@ -3,25 +3,84 @@
 
 const { getDatabase } = require("../../../database");
 
-// ==================================================
-// ITAMAROS BOT • AI MENTION HANDLER 1.0
-// ==================================================
+// ================================================
+// ITAMAROS BOT • AI MENTION HANDLER 2.0
+// ================================================
 
 const SETTINGS = Object.freeze({
-    COOLDOWN_MS: 12000,
+    COOLDOWN_MS: 15000,
     MAX_QUESTION_LENGTH: 1500,
-    MAX_REPLY_LENGTH: 1800,
-    MAX_TRACKED_USERS: 1000
+    MAX_RESPONSE_LENGTH: 1800
 });
 
 const cooldowns = new Map();
-const processingChannels = new Set();
+const activeChannels = new Set();
 
-// ==================================================
+const OUT_OF_SCOPE_MESSAGE = [
+    "🛡️ **Server Support Only**",
+    "",
+    "Sorry! I'm only here to help with the ItamaRos Discord server.",
+    "",
+    "I can assist with tickets, giveaways, prizes,",
+    "partnerships, and other server-related questions.",
+    "",
+    "Please ask a question related to this server! 💜"
+].join("\n");
+
+const SUPPORT_TOPICS = [
+    "ticket",
+    "support",
+    "help",
+    "server",
+    "discord",
+    "giveaway",
+    "winner",
+    "prize",
+    "claim",
+    "drop",
+    "partnership",
+    "partner",
+    "report",
+    "member",
+    "staff",
+    "admin",
+    "manager",
+    "close",
+    "delete",
+    "xp",
+    "level",
+    "radio",
+    "music",
+    "bot",
+    "command",
+    "invite",
+    "role",
+    "channel",
+    "problem",
+    "issue",
+    "question",
+    "request"
+];
+
+const OFF_TOPIC_PATTERNS = [
+    /\bgeometry\b/i,
+    /\btrigonometry\b/i,
+    /\balgebra\b/i,
+    /\bcalculus\b/i,
+    /\bhomework\b/i,
+    /\brecipe\b/i,
+    /\bcooking\b/i,
+    /\bweather\b/i,
+    /\bcapital of\b/i,
+    /\bwrite (me )?(a )?(poem|essay|story)\b/i,
+    /\bsolve (this|the) equation\b/i
+];
+
+// ================================================
 // DATABASE
-// ==================================================
+// ================================================
 
-function getTicketsCollection() {
+function getTickets() {
     const database = getDatabase();
 
     if (!database) {
@@ -31,204 +90,209 @@ function getTicketsCollection() {
     return database.collection("tickets");
 }
 
-// ==================================================
-// HELPERS
-// ==================================================
-
-function cleanQuestion(content, botId) {
-    return String(content || "")
-        .replace(
-            new RegExp(`<@!?${botId}>`, "g"),
-            ""
-        )
-        .trim();
-}
-
-function cleanReply(content) {
-    return String(content || "")
-        .trim()
-        .replace(/@everyone/g, "@\u200beveryone")
-        .replace(/@here/g, "@\u200bhere")
-        .slice(0, SETTINGS.MAX_REPLY_LENGTH);
-}
-
-function isOnCooldown(userId) {
-    const lastRequest = cooldowns.get(userId);
-
-    if (!lastRequest) {
-        return false;
-    }
-
-    return Date.now() - lastRequest <
-        SETTINGS.COOLDOWN_MS;
-}
-
-function registerCooldown(userId) {
-    if (cooldowns.size >= SETTINGS.MAX_TRACKED_USERS) {
-        const now = Date.now();
-
-        for (const [id, timestamp] of cooldowns) {
-            if (
-                now - timestamp >
-                SETTINGS.COOLDOWN_MS
-            ) {
-                cooldowns.delete(id);
-            }
-        }
-
-        if (cooldowns.size >= SETTINGS.MAX_TRACKED_USERS) {
-            const oldest = cooldowns.keys().next().value;
-
-            if (oldest) {
-                cooldowns.delete(oldest);
-            }
-        }
-    }
-
-    cooldowns.set(userId, Date.now());
-}
-
 async function findOpenTicket(message) {
-    return getTicketsCollection().findOne(
+    return getTickets().findOne(
         {
             guildId: message.guild.id,
             channelId: message.channel.id,
             status: "open"
         },
         {
-            sort: {
-                createdAt: -1
-            }
+            sort: { createdAt: -1 }
         }
     );
 }
 
-async function replySafely(message, content) {
+// ================================================
+// QUESTION HELPERS
+// ================================================
+
+function removeBotMention(content, botId) {
+    const mention = new RegExp(
+        `<@!?${botId}>`,
+        "g"
+    );
+
+    return String(content || "")
+        .replace(mention, "")
+        .trim();
+}
+
+function containsTopic(question) {
+    const lower = question.toLowerCase();
+
+    return SUPPORT_TOPICS.some(topic => {
+        const pattern = new RegExp(
+            `\\b${topic}\\b`,
+            "i"
+        );
+
+        return pattern.test(lower);
+    });
+}
+
+function isClearlyOffTopic(question) {
+    const explicitlyOffTopic = OFF_TOPIC_PATTERNS.some(
+        pattern => pattern.test(question)
+    );
+
+    // If the question refers to the server,
+    // allow support-related questions.
+    if (containsTopic(question)) {
+        return false;
+    }
+
+    return explicitlyOffTopic;
+}
+
+function normalizeResponse(response) {
+    return String(response || "")
+        .trim()
+        .slice(0, SETTINGS.MAX_RESPONSE_LENGTH);
+}
+
+// ================================================
+// USER MENTION
+// ================================================
+
+async function replyToUser(message, response) {
+    const userId = message.author.id;
+
+    // Real user mention at the beginning.
+    const content = [
+        `<@${userId}>`,
+        normalizeResponse(response)
+    ].join("\n\n");
+
     return message.reply({
         content,
         allowedMentions: {
             parse: [],
+            users: [userId],
             repliedUser: false
         }
     });
 }
 
-// ==================================================
-// TEMPORARY SUPPORT ASSISTANT
-// ==================================================
+// ================================================
+// COOLDOWN
+// ================================================
 
-// This is a temporary response engine.
-// It works without an external API.
-//
-// Later, a compatible AI provider can replace
-// this function through createAiMentionHandler().
+function getCooldownKey(message) {
+    return `${message.guild.id}:${message.author.id}`;
+}
 
-async function defaultSupportReply({ question, ticket }) {
+function getRemainingCooldown(key) {
+    const last = cooldowns.get(key) || 0;
+
+    return Math.max(
+        0,
+        SETTINGS.COOLDOWN_MS -
+        (Date.now() - last)
+    );
+}
+
+function applyCooldown(key) {
+    const now = Date.now();
+
+    cooldowns.set(key, now);
+
+    // Remove expired entries occasionally.
+    if (cooldowns.size > 1000) {
+        for (const [id, time] of cooldowns) {
+            if (now - time > SETTINGS.COOLDOWN_MS) {
+                cooldowns.delete(id);
+            }
+        }
+    }
+}
+
+// ================================================
+// BUILT-IN SUPPORT REPLIES
+// ================================================
+
+async function defaultSupportReply({ question }) {
     const text = question.toLowerCase();
 
     if (
-        text.includes("giveaway") ||
-        text.includes("prize") ||
-        text.includes("winner")
+        /\b(giveaway|winner|prize)\b/.test(text)
     ) {
         return [
             "🎉 **Giveaway Support**",
             "",
-            "If you won a giveaway, server management will help you claim your prize.",
+            "If you won a giveaway, a private winner",
+            "ticket should be created automatically.",
             "",
-            "Please wait for an authorized staff member.",
-            "Never share your password or verification codes."
+            "Please wait for server management",
+            "to help you receive your prize."
         ].join("\n");
     }
 
-    if (
-        text.includes("close") ||
-        text.includes("delete ticket")
-    ) {
+    if (/\b(close|closure|delete)\b/.test(text)) {
         return [
             "🔒 **Ticket Closure**",
             "",
-            "Only server managers can close tickets.",
+            "Click **Close Ticket** to request closure.",
             "",
-            "To request closure, click **Close Ticket** and then **Request Closure**.",
-            "",
-            "You can include an optional message."
+            "You can include an optional message.",
+            "Only server managers can approve",
+            "and complete the closure."
         ].join("\n");
     }
 
-    if (
-        text.includes("report") ||
-        text.includes("evidence")
-    ) {
+    if (/\b(report|evidence)\b/.test(text)) {
         return [
             "🚨 **Report Support**",
             "",
-            "Please provide a clear explanation of the issue.",
+            "Please explain what happened and",
+            "provide relevant evidence if available.",
             "",
-            "Include relevant evidence if you have any.",
-            "A server manager will review your report."
+            "Server management will review your report."
         ].join("\n");
     }
 
-    if (
-        text.includes("partnership") ||
-        text.includes("partner")
-    ) {
+    if (/\b(partner|partnership)\b/.test(text)) {
         return [
             "🤝 **Partnership Support**",
             "",
             "Please explain your partnership proposal.",
-            "",
-            "A server manager will review your request."
+            "A server manager will review it."
         ].join("\n");
     }
 
-    if (
-        text.includes("claim") &&
-        ticket.type !== "giveaway"
-    ) {
+    if (/\b(xp|level)\b/.test(text)) {
         return [
-            "🛡️ **Ticket Claim**",
+            "⭐ **XP Support**",
             "",
-            "The Claim Ticket feature allows a server manager to take responsibility for a support ticket.",
+            "You can earn XP through server activity.",
+            "Server managers can help with XP issues."
+        ].join("\n");
+    }
+
+    if (/\b(radio|music)\b/.test(text)) {
+        return [
+            "🎵 **Radio Support**",
             "",
-            "Please wait for staff assistance."
+            "The server radio feature is being developed.",
+            "A manager can provide more information."
         ].join("\n");
     }
 
     return [
         "🤖 **ItamaRos Support Assistant**",
         "",
-        "I can help with:",
-        "• Giveaway questions",
-        "• Ticket closure requests",
-        "• Member reports",
-        "• Partnerships",
-        "• Ticket management",
+        "I can help with server tickets, giveaways,",
+        "reports, partnerships, XP, radio, and commands.",
         "",
-        "For other questions, a server manager can assist you.",
+        "Please describe your server-related issue.",
         "",
-        "*Advanced AI responses are not enabled yet.*"
+        "*Advanced AI responses are not connected yet.*"
     ].join("\n");
 }
 
-// ==================================================
-// HANDLER FACTORY
-// ==================================================
-
-// Provide a custom generateReply function later
-// when we connect an eligible AI provider.
-//
-// generateReply receives:
-// {
-//     question: string,
-//     ticket: {
-//         type: string,
-//         typeLabel: string
-//     }
-// }
-//
-// It must return a string.
+// ================================================
+// FACTORY
+// ================================================
 
 function createAiMentionHandler(options = {}) {
     const generateReply =
@@ -247,16 +311,13 @@ function createAiMentionHandler(options = {}) {
 
         const botId = message.client.user?.id;
 
-        if (!botId) {
+        if (
+            !botId ||
+            !message.mentions.users.has(botId)
+        ) {
             return false;
         }
 
-        // The message must mention ItamaRos Bot.
-        if (!message.mentions.users.has(botId)) {
-            return false;
-        }
-
-        // Prevent responding in unrelated channels.
         let ticket;
 
         try {
@@ -270,19 +331,20 @@ function createAiMentionHandler(options = {}) {
             return false;
         }
 
+        // No replies outside active ticket channels.
         if (!ticket) {
             return false;
         }
 
-        const question = cleanQuestion(
+        const question = removeBotMention(
             message.content,
             botId
         );
 
         if (!question) {
-            await replySafely(
+            await replyToUser(
                 message,
-                "🤖 Hi! Mention me with a question and I'll try to help you."
+                "🤖 Hi! Ask me a question about the ItamaRos server."
             ).catch(() => {});
 
             return true;
@@ -292,97 +354,103 @@ function createAiMentionHandler(options = {}) {
             question.length >
             SETTINGS.MAX_QUESTION_LENGTH
         ) {
-            await replySafely(
+            await replyToUser(
                 message,
-                "❌ Your question is too long. Please send a shorter message."
+                "❌ Your question is too long. Please shorten it."
             ).catch(() => {});
 
             return true;
         }
 
-        const userId = message.author.id;
+        const cooldownKey = getCooldownKey(message);
+
+        const remaining = getRemainingCooldown(
+            cooldownKey
+        );
+
+        if (remaining > 0) {
+            await replyToUser(
+                message,
+                `⏳ Please wait ${Math.ceil(
+                    remaining / 1000
+                )} seconds before asking again.`
+            ).catch(() => {});
+
+            return true;
+        }
+
         const channelId = message.channel.id;
 
-        if (isOnCooldown(userId)) {
-            await replySafely(
+        if (activeChannels.has(channelId)) {
+            await replyToUser(
                 message,
-                "⏳ Please wait a few seconds before asking another question."
+                "⏳ I'm already answering a question in this ticket."
             ).catch(() => {});
 
             return true;
         }
 
-        if (processingChannels.has(channelId)) {
-            await replySafely(
-                message,
-                "⏳ I'm already answering another question in this ticket."
-            ).catch(() => {});
-
-            return true;
-        }
-
-        registerCooldown(userId);
-        processingChannels.add(channelId);
+        applyCooldown(cooldownKey);
+        activeChannels.add(channelId);
 
         try {
             await message.channel.sendTyping();
 
-            // Only the current question and ticket
-            // category are sent to the response engine.
-            // We do not forward the full private
-            // ticket conversation automatically.
-            const response = await generateReply({
-                question,
-                ticket: {
-                    type: ticket.type,
-                    typeLabel:
-                        ticket.typeLabel ||
-                        ticket.type
-                }
-            });
+            let response;
 
-            const text = cleanReply(response);
+            if (isClearlyOffTopic(question)) {
+                response = OUT_OF_SCOPE_MESSAGE;
+            } else {
+                response = await generateReply({
+                    question,
+                    ticket: {
+                        type: ticket.type,
+                        typeLabel: ticket.typeLabel
+                    }
+                });
+            }
 
-            if (!text) {
+            if (!response || !String(response).trim()) {
                 throw new Error("EMPTY_AI_RESPONSE");
             }
 
-            // Avoid replying if a staff member
-            // closed the ticket during processing.
-            const latestTicket =
-                await findOpenTicket(message);
+            // Don't respond if the ticket was closed
+            // during processing.
+            const latest = await findOpenTicket(
+                message
+            );
 
             if (
-                !latestTicket ||
-                String(latestTicket._id) !==
-                String(ticket._id)
+                !latest ||
+                String(latest._id) !== String(ticket._id)
             ) {
                 return true;
             }
 
-            await replySafely(message, text);
+            await replyToUser(
+                message,
+                response
+            );
 
             return true;
         } catch (error) {
             console.error(
-                "[AI] Support assistant error:",
+                "[AI] Mention handler error:",
                 error
             );
 
-            await replySafely(
+            await replyToUser(
                 message,
-                "❌ I couldn't process your question. Please try again later or contact server management."
+                "❌ I couldn't answer right now. Please contact server management."
             ).catch(() => {});
 
             return true;
         } finally {
-            processingChannels.delete(channelId);
+            activeChannels.delete(channelId);
         }
     };
 }
 
-// Default handler — currently uses the
-// built-in support responses.
 const handleAiMention = createAiMentionHandler();
 
 module.exports = {
