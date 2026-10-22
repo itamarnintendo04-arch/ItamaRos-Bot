@@ -1,42 +1,148 @@
 
+"use strict";
+
 const {
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle
+    ButtonStyle,
+    MessageFlags
 } = require("discord.js");
 
 const { TICKET_TYPES } = require("./config");
 
-/**
- * Finds a ticket type by its key or ID.
- */
+// ==================================================
+// ITAMAROS BOT • TICKET FORMS SYSTEM 3.0
+// ==================================================
+
+const SETTINGS = Object.freeze({
+    FORM_PREFIX: "ticket_form_",
+    OPEN_PREFIX: "ticket_form_open_",
+    HELP_PREFIX: "ticket_help_",
+
+    MAX_FIELDS: 5,
+    MAX_MODAL_TITLE: 45,
+    MAX_FIELD_LABEL: 45,
+    MAX_FIELD_LENGTH: 4000
+});
+
+// ==================================================
+// FIND TICKET TYPE
+// ==================================================
+
 function findTicketType(typeKey) {
+    if (typeof typeKey !== "string" || !typeKey) {
+        return null;
+    }
+
     return (
         TICKET_TYPES[typeKey] ||
         Object.values(TICKET_TYPES).find(
-            (type) => type.id === typeKey
-        )
+            type => type.id === typeKey
+        ) ||
+        null
     );
 }
 
-/**
- * Creates a ticket form modal.
- */
-function buildTicketModal(typeKey) {
-    const ticketType = findTicketType(typeKey);
+// ==================================================
+// PUBLIC FORM SECURITY
+// ==================================================
 
-    if (!ticketType) {
-        throw new Error(`Unknown ticket type: ${typeKey}`);
+function isGiveawayType(type) {
+    return Boolean(
+        type &&
+        type.id === TICKET_TYPES.GIVEAWAY.id
+    );
+}
+
+function getPublicTicketType(typeKey) {
+    const type = findTicketType(typeKey);
+
+    if (!type) {
+        throw new Error("INVALID_TICKET_TYPE");
     }
 
-    const modal = new ModalBuilder()
-        .setCustomId(`ticket_form_${ticketType.id}`)
-        .setTitle(ticketType.label);
+    // Giveaway winner tickets must only be created
+    // by the automatic giveaway system or by the
+    // dedicated staff command.
+    //
+    // Public panels, old buttons and old modals
+    // are never allowed to open this type.
+    if (isGiveawayType(type)) {
+        throw new Error("GIVEAWAY_RESTRICTED");
+    }
 
-    const components = ticketType.fields.map((field) => {
+    return type;
+}
+
+// ==================================================
+// FORM FIELD VALIDATION
+// ==================================================
+
+function validateFormDefinition(type) {
+    if (
+        !Array.isArray(type.fields) ||
+        type.fields.length < 1 ||
+        type.fields.length > SETTINGS.MAX_FIELDS
+    ) {
+        throw new Error("INVALID_FORM_CONFIGURATION");
+    }
+
+    const seenIds = new Set();
+
+    for (const field of type.fields) {
+        if (
+            typeof field.id !== "string" ||
+            field.id.length < 1 ||
+            field.id.length > 100 ||
+            seenIds.has(field.id)
+        ) {
+            throw new Error("INVALID_FORM_FIELD_ID");
+        }
+
+        seenIds.add(field.id);
+
+        if (
+            typeof field.label !== "string" ||
+            field.label.length < 1 ||
+            field.label.length > SETTINGS.MAX_FIELD_LABEL
+        ) {
+            throw new Error("INVALID_FORM_FIELD_LABEL");
+        }
+
+        if (
+            !Number.isInteger(field.maxLength) ||
+            field.maxLength < 1 ||
+            field.maxLength > SETTINGS.MAX_FIELD_LENGTH
+        ) {
+            throw new Error("INVALID_FORM_FIELD_LENGTH");
+        }
+    }
+}
+
+// ==================================================
+// BUILD FORM MODAL
+// ==================================================
+
+function buildTicketModal(typeKey) {
+    const ticketType = getPublicTicketType(typeKey);
+
+    validateFormDefinition(ticketType);
+
+    const modal = new ModalBuilder()
+        .setCustomId(
+            `${SETTINGS.FORM_PREFIX}${ticketType.id}`
+        )
+        .setTitle(
+            String(ticketType.label).slice(
+                0,
+                SETTINGS.MAX_MODAL_TITLE
+            )
+        );
+
+    const rows = ticketType.fields.map(field => {
         const input = new TextInputBuilder()
             .setCustomId(field.id)
             .setLabel(field.label)
@@ -45,105 +151,197 @@ function buildTicketModal(typeKey) {
                     ? TextInputStyle.Paragraph
                     : TextInputStyle.Short
             )
-            .setRequired(field.required)
+            .setRequired(Boolean(field.required))
             .setMaxLength(field.maxLength);
 
-        return new ActionRowBuilder().addComponents(input);
+        if (
+            typeof field.placeholder === "string" &&
+            field.placeholder.length > 0
+        ) {
+            input.setPlaceholder(
+                field.placeholder.slice(0, 100)
+            );
+        }
+
+        if (field.required) {
+            input.setMinLength(1);
+        }
+
+        return new ActionRowBuilder()
+            .addComponents(input);
     });
 
-    modal.addComponents(...components);
+    modal.addComponents(...rows);
 
     return modal;
 }
 
-/**
- * Creates the buttons shown before opening the form.
- */
-function buildFormPromptButtons(typeKey) {
-    const ticketType = findTicketType(typeKey);
+// ==================================================
+// LEGACY FORM BUTTONS
+// ==================================================
 
-    if (!ticketType) {
-        throw new Error(`Unknown ticket type: ${typeKey}`);
-    }
+// Old ticket panels may still use an extra
+// "Open Form" button.
+//
+// New panels open modals directly from the
+// category selection menu.
+function buildFormPromptButtons(typeKey) {
+    const ticketType = getPublicTicketType(typeKey);
 
     return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`ticket_form_open_${ticketType.id}`)
+            .setCustomId(
+                `${SETTINGS.OPEN_PREFIX}${ticketType.id}`
+            )
             .setLabel("Open Form")
+            .setEmoji("📝")
             .setStyle(ButtonStyle.Success),
 
         new ButtonBuilder()
-            .setCustomId(`ticket_help_${ticketType.id}`)
-            .setLabel("I don't find it")
-            .setStyle(ButtonStyle.Secondary)
+            .setCustomId(
+                `${SETTINGS.HELP_PREFIX}${ticketType.id}`
+            )
+            .setLabel("How to Find Discord IDs")
             .setEmoji("🔎")
+            .setStyle(ButtonStyle.Secondary)
     );
 }
 
-/**
- * Handles the Developer Mode help button.
- */
+// ==================================================
+// DISCORD DEVELOPER MODE HELP
+// ==================================================
+
 async function handleTicketHelp(interaction) {
-    await interaction.reply({
-        ephemeral: true,
-        content: [
-            "**How to find a Discord ID**",
-            "",
-            "**Step 1:** Open Discord User Settings.",
-            "**Step 2:** Go to Advanced.",
-            "**Step 3:** Enable Developer Mode.",
-            "",
-            "**To copy a Message ID:**",
-            "1. Find the giveaway message.",
-            "2. Right-click or long-press the message.",
-            "3. Select Copy Message ID.",
-            "",
-            "**To copy a Channel ID:**",
-            "1. Find the channel.",
-            "2. Right-click or long-press it.",
-            "3. Select Copy Channel ID.",
-            "",
-            "**To copy a User ID:**",
-            "1. Open the user's profile.",
-            "2. Open the profile options.",
-            "3. Select Copy User ID.",
-            "",
-            "Return to the ticket form and paste the copied ID."
-        ].join("\n")
+    const customId = interaction.customId || "";
+
+    if (!customId.startsWith(SETTINGS.HELP_PREFIX)) {
+        return interaction.reply({
+            content: "❌ Invalid help button.",
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    const typeId = customId.slice(
+        SETTINGS.HELP_PREFIX.length
+    );
+
+    let ticketType;
+
+    try {
+        ticketType = getPublicTicketType(typeId);
+    } catch {
+        return interaction.reply({
+            content:
+                "❌ This ticket category is unavailable. Please use the current support panel.",
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
+    const instructions = [
+        "🔎 **How to Find Discord IDs**",
+        "",
+        `**Ticket Category:** ${ticketType.label}`,
+        "",
+        "**Step 1 — Enable Developer Mode**",
+        "1. Open Discord User Settings.",
+        "2. Open Advanced.",
+        "3. Enable Developer Mode.",
+        "",
+        "**Step 2 — Copy the ID you need**",
+        "",
+        "**👤 User ID**",
+        "Open the user's profile or context menu and choose Copy User ID.",
+        "",
+        "**💬 Message ID**",
+        "Right-click or long-press a message and choose Copy Message ID.",
+        "",
+        "**📁 Channel ID**",
+        "Right-click or long-press a channel and choose Copy Channel ID.",
+        "",
+        "**Step 3 — Return to the form**",
+        "Paste the ID into the appropriate field.",
+        "",
+        "💡 On some devices, these options appear under an additional menu."
+    ];
+
+    return interaction.reply({
+        content: instructions.join("\n"),
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: {
+            parse: []
+        }
     });
 }
 
-/**
- * Reads and validates submitted modal fields.
- */
+// ==================================================
+// READ MODAL ANSWERS
+// ==================================================
+
 function getTicketFormAnswers(interaction) {
-    const typeId = interaction.customId.replace(
-        "ticket_form_",
-        ""
+    const customId = interaction.customId || "";
+
+    if (
+        !interaction.isModalSubmit() ||
+        !customId.startsWith(SETTINGS.FORM_PREFIX)
+    ) {
+        throw new Error("INVALID_FORM_SUBMISSION");
+    }
+
+    const typeId = customId.slice(
+        SETTINGS.FORM_PREFIX.length
     );
 
-    const ticketType = findTicketType(typeId);
+    // Prevent submissions of old Giveaway
+    // winner modals as well.
+    const ticketType = getPublicTicketType(typeId);
 
-    if (!ticketType) {
-        throw new Error(`Unknown ticket form: ${typeId}`);
-    }
+    validateFormDefinition(ticketType);
 
     const answers = {};
 
     for (const field of ticketType.fields) {
-        answers[field.id] = interaction.fields
-            .getTextInputValue(field.id)
-            .trim();
+        let value = "";
+
+        try {
+            value = interaction.fields
+                .getTextInputValue(field.id) || "";
+        } catch (error) {
+            if (field.required) {
+                throw new Error(
+                    `MISSING_REQUIRED_FIELD:${field.id}`
+                );
+            }
+        }
+
+        value = value.trim();
+
+        if (field.required && !value) {
+            throw new Error(
+                `MISSING_REQUIRED_FIELD:${field.id}`
+            );
+        }
+
+        if (value.length > field.maxLength) {
+            throw new Error(
+                `FIELD_TOO_LONG:${field.id}`
+            );
+        }
+
+        answers[field.id] = value;
     }
 
     return {
         type: ticketType.id,
         typeLabel: ticketType.label,
         emoji: ticketType.emoji,
-        claimEnabled: ticketType.claim,
+        claimEnabled: Boolean(ticketType.claim),
         answers
     };
 }
+
+// ==================================================
+// EXPORTS
+// ==================================================
 
 module.exports = {
     buildTicketModal,
