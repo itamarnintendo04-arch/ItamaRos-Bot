@@ -1,10 +1,23 @@
 
+"use strict";
+
+// ==================================================
+// ITAMAROS BOT • TICKET CONFIGURATION 3.0
+// ==================================================
+
+// Ticket categories
+// Only categories with publicEnabled: true
+// may appear in the public support panel.
+
 const TICKET_TYPES = {
     REPORT: {
         id: "report",
         label: "Report a member",
         emoji: "🚨",
+
+        publicEnabled: true,
         claim: true,
+
         fields: [
             {
                 id: "userId",
@@ -34,7 +47,10 @@ const TICKET_TYPES = {
         id: "management",
         label: "Help from management",
         emoji: "🛡️",
+
+        publicEnabled: true,
         claim: true,
+
         fields: [
             {
                 id: "subject",
@@ -57,7 +73,26 @@ const TICKET_TYPES = {
         id: "giveaway",
         label: "Giveaway Winner",
         emoji: "🎉",
+
+        // Never show this category publicly.
+        publicEnabled: false,
+
+        // Staff handle prize delivery directly.
         claim: false,
+
+        // Used by the giveaway and staff systems.
+        automaticCreation: true,
+        staffCreation: true,
+
+        // Giveaway tickets must not count towards
+        // the normal support ticket limit.
+        bypassActiveTicketLimit: true,
+
+        // Retained for compatibility with
+        // existing giveaway ticket records.
+        // Public modal creation is blocked
+        // by forms.js, interactionCreate.js
+        // and create.js.
         fields: [
             {
                 id: "channel",
@@ -87,7 +122,10 @@ const TICKET_TYPES = {
         id: "partnership",
         label: "Partnership",
         emoji: "🤝",
+
+        publicEnabled: true,
         claim: true,
+
         fields: [
             {
                 id: "serverName",
@@ -121,26 +159,141 @@ const TICKET_TYPES = {
     }
 };
 
+// ==================================================
+// GENERAL TICKET SETTINGS
+// ==================================================
+
 const TICKET_SETTINGS = {
+    // ----------------------------------------------
+    // TICKET LIMITS
+    // ----------------------------------------------
+
+    // One active REGULAR support ticket per user.
     MAX_ACTIVE_TICKETS: 1,
 
-    ADMIN_PERMISSION: "Administrator",
+    // Giveaway tickets can exist alongside
+    // regular support tickets.
+    GIVEAWAY_BYPASS_TICKET_LIMIT: true,
+
+    // Automatic winner tickets must be identified
+    // by giveaway ID + winner ID.
+    GIVEAWAY_UNIQUE_PER_WINNER: true,
+
+    // ----------------------------------------------
+    // MANAGEMENT PERMISSIONS
+    // ----------------------------------------------
+
+    // Primary manager permission.
+    ADMIN_PERMISSION: "ManageGuild",
+
+    // Accepted permissions for ticket management.
+    ADMIN_PERMISSIONS: [
+        "ManageGuild",
+        "Administrator"
+    ],
+
+    ONLY_MANAGERS_CAN_CLOSE: true,
+    ONLY_MANAGERS_CAN_DELETE: true,
+    ONLY_MANAGERS_CAN_CLAIM: true,
+
+    // ----------------------------------------------
+    // BUTTON CUSTOM IDS
+    // ----------------------------------------------
 
     CLOSE_BUTTON: "ticket_close",
     DELETE_BUTTON: "ticket_delete",
     CLAIM_BUTTON: "ticket_claim",
 
+    CLOSE_REQUEST_BUTTON: "ticket_close_request",
+    CLOSE_REQUEST_MODAL: "ticket_close_request_modal",
+
+    CLOSE_REVIEW_PREFIX: "ticket_close_review",
+
+    DELETE_CONFIRM_BUTTON: "ticket_delete_confirm",
+    DELETE_CANCEL_BUTTON: "ticket_delete_cancel",
+
+    // ----------------------------------------------
+    // CLOSE REQUESTS
+    // ----------------------------------------------
+
+    ALLOW_CLOSE_REQUESTS: true,
+
+    // The user may leave their request blank.
+    CLOSE_REQUEST_MESSAGE_REQUIRED: false,
+
+    // Staff may also close without a message.
+    CLOSURE_MESSAGE_REQUIRED: false,
+
+    REQUIRE_MANAGER_APPROVAL: true,
+
+    // ----------------------------------------------
+    // CHANNEL BEHAVIOR
+    // ----------------------------------------------
+
     REUSE_CHANNELS: true,
+
     KEEP_OLD_MESSAGES: true,
 
+    LOCK_CHANNEL_AFTER_CLOSE: true,
+
+    REQUIRE_CLOSED_BEFORE_DELETE: true,
+
+    // ----------------------------------------------
+    // TRANSCRIPTS
+    // ----------------------------------------------
+
     SAVE_TRANSCRIPTS: true,
+
     SEND_TRANSCRIPT_TO_CLOSING_ADMIN: true,
 
+    REQUIRE_TRANSCRIPT_BEFORE_DELETE: true,
+
+    // ----------------------------------------------
+    // NOTIFICATIONS
+    // ----------------------------------------------
+
     SEND_REOPEN_DM: true,
-    SEND_CLOSE_DM: true
+    SEND_CLOSE_DM: true,
+
+    // Discord ephemeral messages are visible
+    // only to the user who triggered them.
+    USE_EPHEMERAL_RESPONSES: true
 };
+
+// ==================================================
+// HELPERS
+// ==================================================
+
+function getTicketType(typeId) {
+    return Object.values(TICKET_TYPES).find(
+        type => type.id === typeId
+    ) || null;
+}
+
+function getPublicTicketTypes() {
+    return Object.values(TICKET_TYPES).filter(
+        type => type.publicEnabled === true
+    );
+}
+
+function isPublicTicketType(typeId) {
+    return getTicketType(typeId)?.publicEnabled === true;
+}
+
+function isGiveawayTicketType(typeId) {
+    return typeId === TICKET_TYPES.GIVEAWAY.id;
+}
+
+// ==================================================
+// EXPORTS
+// ==================================================
 
 module.exports = {
     TICKET_TYPES,
-    TICKET_SETTINGS
+    TICKET_SETTINGS,
+
+    getTicketType,
+    getPublicTicketTypes,
+    isPublicTicketType,
+    isGiveawayTicketType
 };
