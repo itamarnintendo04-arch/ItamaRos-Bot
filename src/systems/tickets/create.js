@@ -4,25 +4,24 @@
 const {
     ChannelType,
     PermissionFlagsBits,
-    EmbedBuilder
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
 } = require("discord.js");
 
 const { randomUUID } = require("node:crypto");
 const { getDatabase } = require("../../../database");
 const { TICKET_SETTINGS, TICKET_TYPES } = require("./config");
 
-// ================================================
-// ITAMAROS BOT • TICKET CREATION ENGINE 2.0
-// ================================================
-
 const SETTINGS = Object.freeze({
     COLOR: 0x5865F2,
     LOCK_MS: 10 * 60 * 1000,
     MAX_DESCRIPTION: 3900,
-    MAX_ROLE_OVERWRITES: 90
+    MAX_OVERWRITES: 90
 });
 
-const PUBLIC_PERMISSIONS = [
+const USER_PERMISSIONS = [
     PermissionFlagsBits.ViewChannel,
     PermissionFlagsBits.SendMessages,
     PermissionFlagsBits.ReadMessageHistory,
@@ -30,26 +29,26 @@ const PUBLIC_PERMISSIONS = [
     PermissionFlagsBits.EmbedLinks
 ];
 
-function tickets() {
+function getTickets() {
     return getDatabase().collection("tickets");
 }
 
-function locks() {
+function getLocks() {
     return getDatabase().collection("ticket_creation_locks");
 }
 
 function failure(reason, extra = {}) {
-    return { success: false, reason, ...extra };
+    return {
+        success: false,
+        reason,
+        ...extra
+    };
 }
 
 function getTicketType(typeId) {
     return Object.values(TICKET_TYPES).find(
         type => type.id === typeId
     ) || null;
-}
-
-function isRestrictedType(typeId) {
-    return typeId === TICKET_TYPES.GIVEAWAY.id;
 }
 
 function createTicketName(username) {
@@ -80,14 +79,14 @@ async function checkPermissions(guild) {
 
     if (!bot) {
         throw new Error(
-            "MISSING_BOT_PERMISSIONS\n\nCannot access the bot member."
+            "MISSING_BOT_PERMISSIONS\nBot member unavailable."
         );
     }
 
     const required = [
         [PermissionFlagsBits.ManageChannels, "Manage Channels"],
         [PermissionFlagsBits.ManageRoles, "Manage Roles"],
-        [PermissionFlagsBits.ViewChannel, "View Channels"],
+        [PermissionFlagsBits.ViewChannel, "View Channel"],
         [PermissionFlagsBits.SendMessages, "Send Messages"],
         [PermissionFlagsBits.ReadMessageHistory, "Read Message History"],
         [PermissionFlagsBits.EmbedLinks, "Embed Links"]
@@ -98,12 +97,13 @@ async function checkPermissions(guild) {
         .map(([, name]) => name);
 
     if (missing.length) {
-        throw new Error([
-            "MISSING_BOT_PERMISSIONS",
-            "",
-            "Enable these permissions:",
-            ...missing.map(name => `• ${name}`)
-        ].join("\n"));
+        throw new Error(
+            [
+                "MISSING_BOT_PERMISSIONS",
+                "",
+                ...missing
+            ].join("\n")
+        );
     }
 
     return bot;
@@ -133,12 +133,12 @@ function buildOverwrites(guild, userId, botId, staffRoles) {
         },
         {
             id: userId,
-            allow: PUBLIC_PERMISSIONS
+            allow: USER_PERMISSIONS
         },
         {
             id: botId,
             allow: [
-                ...PUBLIC_PERMISSIONS,
+                ...USER_PERMISSIONS,
                 PermissionFlagsBits.ManageChannels,
                 PermissionFlagsBits.ManageMessages
             ]
@@ -149,13 +149,13 @@ function buildOverwrites(guild, userId, botId, staffRoles) {
         overwrites.push({
             id: role.id,
             allow: [
-                ...PUBLIC_PERMISSIONS,
+                ...USER_PERMISSIONS,
                 PermissionFlagsBits.ManageMessages
             ]
         });
     }
 
-    if (overwrites.length > SETTINGS.MAX_ROLE_OVERWRITES) {
+    if (overwrites.length > SETTINGS.MAX_OVERWRITES) {
         throw new Error("TOO_MANY_STAFF_ROLES");
     }
 
@@ -163,7 +163,23 @@ function buildOverwrites(guild, userId, botId, staffRoles) {
 }
 
 // ================================================
-// ATOMIC CREATION RESERVATION
+// CLOSE BUTTON
+// ================================================
+
+function buildTicketControls() {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(TICKET_SETTINGS.CLOSE_BUTTON)
+                .setLabel("Close Ticket")
+                .setEmoji("🔒")
+                .setStyle(ButtonStyle.Danger)
+        )
+    ];
+}
+
+// ================================================
+// CREATION LOCK
 // ================================================
 
 async function acquireLock(guildId, userId) {
@@ -172,7 +188,7 @@ async function acquireLock(guildId, userId) {
     const now = new Date();
 
     try {
-        const result = await locks().updateOne(
+        const result = await getLocks().updateOne(
             {
                 _id: id,
                 $or: [
@@ -213,7 +229,7 @@ async function acquireLock(guildId, userId) {
 async function releaseLock(lock) {
     if (!lock) return;
 
-    await locks().updateOne(
+    await getLocks().updateOne(
         {
             _id: lock.id,
             token: lock.token
@@ -232,17 +248,16 @@ async function releaseLock(lock) {
 }
 
 // ================================================
-// EXISTING TICKET CHECK
+// EXISTING TICKETS
 // ================================================
 
 async function findActiveTicket(guild, userId) {
-    const active = await tickets()
-        .find({
-            guildId: guild.id,
-            userId,
-            status: "open"
-        })
-        .toArray();
+    const active = await getTickets().find({
+        guildId: guild.id,
+        userId,
+        status: "open",
+        type: { $ne: TICKET_TYPES.GIVEAWAY.id }
+    }).toArray();
 
     let count = 0;
     let firstChannel = null;
@@ -258,23 +273,21 @@ async function findActiveTicket(guild, userId) {
             if (!firstChannel) {
                 firstChannel = channel;
             }
-
-            continue;
-        }
-
-        await tickets().updateOne(
-            {
-                _id: ticket._id,
-                status: "open"
-            },
-            {
-                $set: {
-                    status: "deleted",
-                    channelMissing: true,
-                    updatedAt: new Date()
+        } else {
+            await getTickets().updateOne(
+                {
+                    _id: ticket._id,
+                    status: "open"
+                },
+                {
+                    $set: {
+                        status: "deleted",
+                        channelMissing: true,
+                        updatedAt: new Date()
+                    }
                 }
-            }
-        );
+            );
+        }
     }
 
     return { count, channel: firstChannel };
@@ -285,39 +298,39 @@ async function findReusableChannel(guild, userId) {
         return null;
     }
 
-    const previous = await tickets().findOne(
-        {
-            guildId: guild.id,
-            userId,
-            status: "closed"
-        },
-        {
-            sort: { updatedAt: -1 }
+    const previous = await getTickets().find({
+        guildId: guild.id,
+        userId,
+        status: "closed",
+        type: { $ne: TICKET_TYPES.GIVEAWAY.id }
+    }).sort({
+        updatedAt: -1
+    }).limit(10).toArray();
+
+    for (const ticket of previous) {
+        const channel = await guild.channels.fetch(
+            ticket.channelId
+        ).catch(() => null);
+
+        if (
+            !channel ||
+            channel.type !== ChannelType.GuildText
+        ) {
+            continue;
         }
-    );
 
-    if (!previous) return null;
+        const occupied = await getTickets().findOne({
+            guildId: guild.id,
+            channelId: channel.id,
+            status: "open"
+        });
 
-    const channel = await guild.channels.fetch(
-        previous.channelId
-    ).catch(() => null);
-
-    if (
-        !channel ||
-        channel.type !== ChannelType.GuildText
-    ) {
-        return null;
+        if (!occupied) {
+            return channel;
+        }
     }
 
-    // Do not reuse a channel that currently belongs
-    // to an open ticket.
-    const occupied = await tickets().findOne({
-        guildId: guild.id,
-        channelId: channel.id,
-        status: "open"
-    });
-
-    return occupied ? null : channel;
+    return null;
 }
 
 async function findRecoverableChannel(guild, topic) {
@@ -331,7 +344,7 @@ async function findRecoverableChannel(guild, topic) {
             continue;
         }
 
-        const registered = await tickets().findOne({
+        const registered = await getTickets().findOne({
             guildId: guild.id,
             channelId: channel.id
         });
@@ -344,41 +357,29 @@ async function findRecoverableChannel(guild, topic) {
     return null;
 }
 
-async function configureChannel(
-    channel,
-    overwrites
-) {
-    await channel.permissionOverwrites.set(overwrites);
-}
-
 // ================================================
-// WELCOME EMBED
+// WELCOME MESSAGE
 // ================================================
 
 function buildWelcomeEmbed(type, userId, answers, sessionId) {
-    const submitted = Object.entries(answers || {});
-
     const lines = [
         `Welcome <@${userId}>!`,
         "",
-        "Your private support ticket has been opened.",
+        "Your private support ticket has been created.",
         "",
         "### 📋 Submitted Information",
         ""
     ];
 
-    for (const [key, value] of submitted) {
-        const safeKey = cleanText(key, 80);
-        const safeValue = cleanText(value, 900);
+    for (const [key, value] of Object.entries(answers)) {
+        const line =
+            `**${cleanText(key, 80)}:** ${cleanText(value)}`;
 
-        const line = `**${safeKey}:** ${safeValue}`;
-
-        const candidate = [...lines, line].join("\n");
-
-        if (candidate.length > SETTINGS.MAX_DESCRIPTION) {
-            lines.push(
-                "*Additional details were shortened.*"
-            );
+        if (
+            [...lines, line].join("\n").length >
+            SETTINGS.MAX_DESCRIPTION - 250
+        ) {
+            lines.push("*Additional information was shortened.*");
             break;
         }
 
@@ -387,26 +388,20 @@ function buildWelcomeEmbed(type, userId, answers, sessionId) {
 
     lines.push(
         "",
-        "### 🛡️ What Happens Next?",
-        "Our support team will review your request.",
+        "### 🛡️ Support Status",
+        "**Awaiting Staff**",
         "",
-        "Please wait for an authorized staff member."
+        "A staff member will assist you shortly.",
+        "",
+        "🔒 Only authorized staff can close this ticket."
     );
 
     return new EmbedBuilder()
         .setColor(SETTINGS.COLOR)
         .setTitle(`${type.emoji} ${type.label}`)
         .setDescription(
-            lines.join("\n").slice(
-                0,
-                SETTINGS.MAX_DESCRIPTION
-            )
+            lines.join("\n").slice(0, SETTINGS.MAX_DESCRIPTION)
         )
-        .addFields({
-            name: "📋 Status",
-            value: "🟡 Awaiting Staff",
-            inline: true
-        })
         .setFooter({
             text: `ItamaRos Bot • Session ${sessionId}`
         })
@@ -414,7 +409,7 @@ function buildWelcomeEmbed(type, userId, answers, sessionId) {
 }
 
 // ================================================
-// MAIN TICKET CREATION
+// CREATE TICKET
 // ================================================
 
 async function createTicket(interaction, ticketData) {
@@ -424,26 +419,15 @@ async function createTicket(interaction, ticketData) {
         return failure("SERVER_ONLY");
     }
 
-    if (
-        !ticketData ||
-        typeof ticketData.type !== "string"
-    ) {
-        return failure("INVALID_TICKET_DATA");
-    }
-
-    const ticketType = getTicketType(ticketData.type);
+    const ticketType = getTicketType(ticketData?.type);
 
     if (!ticketType) {
         return failure("INVALID_TICKET_TYPE");
     }
 
-    // SECURITY:
-    // The public ticket creation API must never
-    // create a Giveaway Winner ticket.
-    //
-    // Verified winners use winnerTicket.js.
-    // Authorized managers will use a separate command.
-    if (isRestrictedType(ticketType.id)) {
+    // Giveaway tickets are never created
+    // through the public ticket form.
+    if (ticketType.id === TICKET_TYPES.GIVEAWAY.id) {
         return failure("GIVEAWAY_RESTRICTED");
     }
 
@@ -458,6 +442,7 @@ async function createTicket(interaction, ticketData) {
     }
 
     const botMember = await checkPermissions(guild);
+
     const staffRoles = await getStaffRoles(guild);
 
     const overwrites = buildOverwrites(
@@ -467,10 +452,7 @@ async function createTicket(interaction, ticketData) {
         staffRoles
     );
 
-    const lock = await acquireLock(
-        guild.id,
-        user.id
-    );
+    const lock = await acquireLock(guild.id, user.id);
 
     if (!lock) {
         return failure("CREATION_IN_PROGRESS");
@@ -487,12 +469,12 @@ async function createTicket(interaction, ticketData) {
             user.id
         );
 
-        const maxTickets = Math.max(
+        const maximum = Math.max(
             1,
             Number(TICKET_SETTINGS.MAX_ACTIVE_TICKETS) || 1
         );
 
-        if (active.count >= maxTickets) {
+        if (active.count >= maximum) {
             return failure("ACTIVE_TICKET", {
                 channel: active.channel
             });
@@ -507,15 +489,10 @@ async function createTicket(interaction, ticketData) {
             reused = true;
         }
 
-        const topic = getTicketTopic(
-            guild.id,
-            user.id
-        );
-
         if (!channel) {
             channel = await findRecoverableChannel(
                 guild,
-                topic
+                getTicketTopic(guild.id, user.id)
             );
         }
 
@@ -523,28 +500,24 @@ async function createTicket(interaction, ticketData) {
             channel = await guild.channels.create({
                 name: createTicketName(user.username),
                 type: ChannelType.GuildText,
-                topic,
+                topic: getTicketTopic(guild.id, user.id),
                 permissionOverwrites: overwrites,
-                reason:
-                    `ItamaRos support ticket for ${user.id}`
+                reason: `Support ticket for ${user.id}`
             });
 
             createdChannel = true;
         } else {
-            await configureChannel(
-                channel,
+            await channel.permissionOverwrites.set(
                 overwrites
             );
         }
 
-        const sessionId = `${Date.now()}-${user.id}`;
-
         const now = new Date();
+        const sessionId = `${Date.now()}-${user.id}`;
 
         const ticketRecord = {
             guildId: guild.id,
             channelId: channel.id,
-
             userId: user.id,
             username: user.username,
 
@@ -564,10 +537,13 @@ async function createTicket(interaction, ticketData) {
             updatedAt: now
         };
 
-        await tickets().insertOne(ticketRecord);
+        await getTickets().insertOne(ticketRecord);
+
         ticketSaved = true;
 
-        const embed = buildWelcomeEmbed(
+        // Every regular ticket gets a Close Ticket button.
+        // The close.js handler must enforce staff permissions.
+        const welcomeEmbed = buildWelcomeEmbed(
             ticketType,
             user.id,
             answers,
@@ -579,7 +555,8 @@ async function createTicket(interaction, ticketData) {
         try {
             await channel.send({
                 content: `<@${user.id}>`,
-                embeds: [embed],
+                embeds: [welcomeEmbed],
+                components: buildTicketControls(),
                 allowedMentions: {
                     parse: [],
                     users: [user.id]
@@ -594,11 +571,6 @@ async function createTicket(interaction, ticketData) {
             );
         }
 
-        console.log(
-            `[Tickets] Created ticket ${channel.id} ` +
-            `for ${user.id} (${ticketType.id}).`
-        );
-
         return {
             success: true,
             reused,
@@ -607,29 +579,19 @@ async function createTicket(interaction, ticketData) {
             welcomeMessageSent
         };
     } catch (error) {
-        console.error(
-            "[Tickets] Creation failed:",
-            error
-        );
+        console.error("[Tickets] Creation failed:", error);
 
-        // Never delete a channel after its ticket record
-        // was successfully saved.
         if (!ticketSaved && createdChannel && channel) {
             await channel.delete(
                 "Rolling back failed ticket creation"
-            ).catch(cleanupError => {
-                console.error(
-                    "[Tickets] Channel cleanup failed:",
-                    cleanupError
-                );
-            });
+            ).catch(() => {});
         }
 
         throw error;
     } finally {
         await releaseLock(lock).catch(error => {
             console.error(
-                "[Tickets] Could not release creation lock:",
+                "[Tickets] Failed to release creation lock:",
                 error
             );
         });
