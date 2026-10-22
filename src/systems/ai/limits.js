@@ -4,86 +4,50 @@
 const { getDatabase } = require("../../../database");
 
 // ==================================================
-// ITAMAROS BOT • AI LIMITS SYSTEM 1.0
+// ITAMAROS BOT • AI LIMITS SYSTEM 2.0
+// UNLIMITED DAILY QUESTIONS
 // ==================================================
 
 const AI_LIMITS = Object.freeze({
-    MAX_USER_REQUESTS_PER_DAY: 10,
-    MAX_GLOBAL_REQUESTS_PER_DAY: 100,
+    // No daily user quota.
+    MAX_USER_REQUESTS_PER_DAY: null,
 
+    // No daily server quota.
+    MAX_GLOBAL_REQUESTS_PER_DAY: null,
+
+    // Anti-spam protection only.
     COOLDOWN_MS: 15 * 1000,
 
     MAX_QUESTION_LENGTH: 1500,
-    MAX_RESPONSE_LENGTH: 1800,
-
-    // Keep usage records for three days.
-    HISTORY_RETENTION_DAYS: 3
+    MAX_RESPONSE_LENGTH: 1800
 });
 
 // ==================================================
-// DATABASE COLLECTIONS
+// DATABASE
 // ==================================================
 
 function getUsageCollection() {
-    const database = getDatabase();
+    const db = getDatabase();
 
-    if (!database) {
+    if (!db) {
         throw new Error("MongoDB is not connected.");
     }
 
-    return database.collection("ai_usage");
+    return db.collection("ai_cooldowns");
 }
 
 function getTicketCollection() {
-    const database = getDatabase();
+    const db = getDatabase();
 
-    if (!database) {
+    if (!db) {
         throw new Error("MongoDB is not connected.");
     }
 
-    return database.collection("tickets");
+    return db.collection("tickets");
 }
 
 // ==================================================
-// TIME HELPERS
-// ==================================================
-
-function getUtcDay(date = new Date()) {
-    return date.toISOString().slice(0, 10);
-}
-
-function getNextUtcDay(date = new Date()) {
-    const next = new Date(date);
-
-    next.setUTCHours(24, 0, 0, 0);
-
-    return next;
-}
-
-function getExpirationDate(date = new Date()) {
-    const expiration = getNextUtcDay(date);
-
-    expiration.setUTCDate(
-        expiration.getUTCDate() +
-        AI_LIMITS.HISTORY_RETENTION_DAYS
-    );
-
-    return expiration;
-}
-
-function secondsUntil(date, now = new Date()) {
-    if (!date) return 0;
-
-    return Math.max(
-        0,
-        Math.ceil(
-            (new Date(date).getTime() - now.getTime()) / 1000
-        )
-    );
-}
-
-// ==================================================
-// RESPONSE HELPERS
+// HELPERS
 // ==================================================
 
 function deny(reason, message, extra = {}) {
@@ -104,16 +68,36 @@ function allow(extra = {}) {
     };
 }
 
-// ==================================================
-// VALIDATION
-// ==================================================
-
-function validDiscordId(id) {
+function isValidDiscordId(value) {
     return (
-        typeof id === "string" &&
-        /^\d{15,22}$/.test(id)
+        typeof value === "string" &&
+        /^\d{15,22}$/.test(value)
     );
 }
+
+function getCooldownId(guildId, userId) {
+    return `ai:${guildId}:${userId}`;
+}
+
+function getSecondsRemaining(nextAllowedAt, now = new Date()) {
+    if (!nextAllowedAt) {
+        return 0;
+    }
+
+    return Math.max(
+        0,
+        Math.ceil(
+            (
+                new Date(nextAllowedAt).getTime() -
+                now.getTime()
+            ) / 1000
+        )
+    );
+}
+
+// ==================================================
+// QUESTION VALIDATION
+// ==================================================
 
 function validateQuestion(question) {
     if (typeof question !== "string") {
@@ -138,7 +122,11 @@ function validateQuestion(question) {
     ) {
         return deny(
             "QUESTION_TOO_LONG",
-            `❌ Your question must be ${AI_LIMITS.MAX_QUESTION_LENGTH} characters or fewer.`
+            [
+                "❌ Your question is too long.",
+                "",
+                `Maximum length: ${AI_LIMITS.MAX_QUESTION_LENGTH} characters.`
+            ].join("\n")
         );
     }
 
@@ -148,7 +136,7 @@ function validateQuestion(question) {
 }
 
 // ==================================================
-// ACTIVE TICKET VALIDATION
+// ACTIVE TICKET CHECK
 // ==================================================
 
 async function checkActiveTicket(guildId, channelId) {
@@ -160,154 +148,77 @@ async function checkActiveTicket(guildId, channelId) {
 }
 
 // ==================================================
-// USAGE DOCUMENT HELPERS
+// ATOMIC COOLDOWN RESERVATION
 // ==================================================
 
-async function ensureUsageDocument(
-    collection,
-    id,
-    kind,
-    day,
-    now
-) {
+async function reserveCooldown(guildId, userId) {
+    const collection = getUsageCollection();
+
+    const id = getCooldownId(
+        guildId,
+        userId
+    );
+
+    const now = new Date();
+
+    const nextAllowedAt = new Date(
+        now.getTime() + AI_LIMITS.COOLDOWN_MS
+    );
+
+    // Ensure a single document exists for this user.
+    // _id is unique by default in MongoDB.
     await collection.updateOne(
         { _id: id },
         {
             $setOnInsert: {
-                kind,
-                day,
-                count: 0,
+                guildId,
+                userId,
                 createdAt: now,
-                expiresAt: getExpirationDate(now)
+                nextAllowedAt: new Date(0)
             }
         },
         { upsert: true }
     );
-}
 
-// One atomic update reserves one request.
-// This prevents two simultaneous requests
-// from both consuming the same final slot.
-async function reserveUsage(
-    collection,
-    id,
-    maximum,
-    now,
-    cooldownMs = 0
-) {
-    const filter = {
-        _id: id,
-        count: { $lt: maximum }
-    };
-
-    if (cooldownMs > 0) {
-        filter.$or = [
-            { nextAllowedAt: { $exists: false } },
-            { nextAllowedAt: { $lte: now } }
-        ];
-    }
-
-    const update = {
-        $inc: {
-            count: 1
-        },
-        $set: {
-            updatedAt: now
-        }
-    };
-
-    if (cooldownMs > 0) {
-        update.$set.nextAllowedAt = new Date(
-            now.getTime() + cooldownMs
-        );
-    }
-
-    const result = await collection.updateOne(
-        filter,
-        update
-    );
-
-    return result.modifiedCount === 1;
-}
-
-async function refundGlobalReservation(
-    collection,
-    globalId
-) {
+    // Atomic check-and-update:
+    // Only one simultaneous request can
+    // reserve the next cooldown interval.
     const result = await collection.updateOne(
         {
-            _id: globalId,
-            count: { $gt: 0 }
+            _id: id,
+            nextAllowedAt: { $lte: now }
         },
         {
-            $inc: {
-                count: -1
-            },
             $set: {
-                updatedAt: new Date()
+                nextAllowedAt,
+                lastUsedAt: now
             }
         }
     );
 
-    return result.modifiedCount === 1;
-}
+    if (result.modifiedCount === 1) {
+        return allow({
+            cooldownSeconds: 0,
+            nextAllowedAt,
+            unlimited: true
+        });
+    }
 
-// ==================================================
-// DENIAL REASONS
-// ==================================================
-
-async function getUserDenial(
-    collection,
-    userKey,
-    now
-) {
     const record = await collection.findOne({
-        _id: userKey
+        _id: id
     });
 
-    if (!record) {
-        return deny(
-            "RETRY",
-            "⏳ Please try your question again."
-        );
-    }
-
-    if (
-        record.count >=
-        AI_LIMITS.MAX_USER_REQUESTS_PER_DAY
-    ) {
-        return deny(
-            "USER_DAILY_LIMIT",
-            [
-                "🚫 **Daily AI Limit Reached**",
-                "",
-                "You have used all 10 AI questions for today.",
-                "Your limit resets at 00:00 UTC."
-            ].join("\n"),
-            {
-                resetAt: getNextUtcDay(now)
-            }
-        );
-    }
-
-    const wait = secondsUntil(
-        record.nextAllowedAt,
+    const remaining = getSecondsRemaining(
+        record?.nextAllowedAt,
         now
     );
 
-    if (wait > 0) {
-        return deny(
-            "COOLDOWN",
-            `⏳ Please wait ${wait} seconds before asking another question.`,
-            {
-                retryAfterSeconds: wait
-            }
-        );
-    }
-
     return deny(
-        "RETRY",
-        "⏳ Please try your question again."
+        "COOLDOWN",
+        `⏳ Please wait ${Math.max(1, remaining)} seconds before asking another question.`,
+        {
+            retryAfterSeconds: Math.max(1, remaining)
+        }
     );
 }
 
@@ -315,25 +226,18 @@ async function getUserDenial(
 // MAIN LIMIT CHECK
 // ==================================================
 
-// Call this function before sending a question
-// to any external AI provider.
+// Call this function only after confirming
+// that the message mentions the bot.
 //
-// One successful call consumes one daily request.
+// Unlike the previous version, this function
+// does NOT consume any daily quota.
 //
 // Input:
 // {
-//     guildId: string,
-//     channelId: string,
-//     userId: string,
-//     question: string
-// }
-//
-// Output:
-// {
-//     allowed: boolean,
-//     reason: string | null,
-//     message: string | null,
-//     remaining?: number
+//     guildId,
+//     channelId,
+//     userId,
+//     question
 // }
 
 async function checkAndConsumeAiLimit(input = {}) {
@@ -344,10 +248,14 @@ async function checkAndConsumeAiLimit(input = {}) {
         question
     } = input;
 
+    // ----------------------------------------------
+    // STEP 1: VALIDATE DISCORD CONTEXT
+    // ----------------------------------------------
+
     if (
-        !validDiscordId(guildId) ||
-        !validDiscordId(channelId) ||
-        !validDiscordId(userId)
+        !isValidDiscordId(guildId) ||
+        !isValidDiscordId(channelId) ||
+        !isValidDiscordId(userId)
     ) {
         return deny(
             "INVALID_CONTEXT",
@@ -355,14 +263,21 @@ async function checkAndConsumeAiLimit(input = {}) {
         );
     }
 
-    const questionCheck = validateQuestion(question);
+    // ----------------------------------------------
+    // STEP 2: VALIDATE QUESTION
+    // ----------------------------------------------
 
-    if (!questionCheck.allowed) {
-        return questionCheck;
+    const validation = validateQuestion(question);
+
+    if (!validation.allowed) {
+        return validation;
     }
 
     try {
-        // AI is permitted only inside active tickets.
+        // ------------------------------------------
+        // STEP 3: CHECK ACTIVE TICKET
+        // ------------------------------------------
+
         const ticket = await checkActiveTicket(
             guildId,
             channelId
@@ -371,132 +286,52 @@ async function checkAndConsumeAiLimit(input = {}) {
         if (!ticket) {
             return deny(
                 "NOT_A_TICKET",
-                "🎫 ItamaRos AI is available only in open support tickets."
+                "🎫 ItamaRos AI only works inside open support tickets."
             );
         }
-
-        const now = new Date();
-        const day = getUtcDay(now);
-
-        const globalKey = `global:${day}`;
-        const userKey =
-            `user:${guildId}:${userId}:${day}`;
-
-        const usage = getUsageCollection();
-
-        await ensureUsageDocument(
-            usage,
-            globalKey,
-            "global",
-            day,
-            now
-        );
-
-        await ensureUsageDocument(
-            usage,
-            userKey,
-            "user",
-            day,
-            now
-        );
 
         // ------------------------------------------
-        // STEP 1: GLOBAL DAILY RESERVATION
+        // STEP 4: CHECK ANTI-SPAM COOLDOWN
         // ------------------------------------------
 
-        const globalReserved = await reserveUsage(
-            usage,
-            globalKey,
-            AI_LIMITS.MAX_GLOBAL_REQUESTS_PER_DAY,
-            now
+        const cooldown = await reserveCooldown(
+            guildId,
+            userId
         );
 
-        if (!globalReserved) {
-            return deny(
-                "GLOBAL_DAILY_LIMIT",
-                [
-                    "🚫 **ItamaRos AI Daily Limit Reached**",
-                    "",
-                    "The server's AI usage limit has been reached.",
-                    "Please try again tomorrow."
-                ].join("\n"),
-                {
-                    resetAt: getNextUtcDay(now)
-                }
-            );
+        if (!cooldown.allowed) {
+            return cooldown;
         }
 
-        let userReserved = false;
+        // ------------------------------------------
+        // STEP 5: UNLIMITED ACCESS
+        // ------------------------------------------
 
-        try {
-            // --------------------------------------
-            // STEP 2: USER QUOTA + COOLDOWN
-            // --------------------------------------
+        return allow({
+            ticketId: String(ticket._id),
+            question: validation.question,
 
-            userReserved = await reserveUsage(
-                usage,
-                userKey,
-                AI_LIMITS.MAX_USER_REQUESTS_PER_DAY,
-                now,
-                AI_LIMITS.COOLDOWN_MS
-            );
+            // No daily limit!
+            unlimited: true,
 
-            if (!userReserved) {
-                return await getUserDenial(
-                    usage,
-                    userKey,
-                    now
-                );
-            }
+            cooldownMs: AI_LIMITS.COOLDOWN_MS,
+            nextAllowedAt: cooldown.nextAllowedAt
+        });
 
-            // --------------------------------------
-            // STEP 3: SUCCESS
-            // --------------------------------------
-
-            const record = await usage.findOne({
-                _id: userKey
-            });
-
-            return allow({
-                ticketId: String(ticket._id),
-
-                remaining: Math.max(
-                    0,
-                    AI_LIMITS.MAX_USER_REQUESTS_PER_DAY -
-                    (record?.count || 0)
-                ),
-
-                resetAt: getNextUtcDay(now)
-            });
-        } finally {
-            // If user reservation failed, return
-            // the global slot.
-            if (!userReserved) {
-                await refundGlobalReservation(
-                    usage,
-                    globalKey
-                ).catch(error => {
-                    console.error(
-                        "[AI Limits] Global refund failed:",
-                        error
-                    );
-                });
-            }
-        }
     } catch (error) {
         console.error(
-            "[AI Limits] Database check failed:",
+            "[AI Limits] Validation failed:",
             error
         );
 
-        // Fail closed: never bypass limits
-        // when MongoDB is unavailable.
+        // If the database cannot be reached,
+        // don't bypass the ticket and spam checks.
         return deny(
             "LIMIT_SERVICE_UNAVAILABLE",
             [
                 "⚠️ **AI Temporarily Unavailable**",
                 "",
-                "I couldn't verify your usage limit.",
+                "I couldn't verify your ticket or cooldown.",
                 "Please try again later."
             ].join("\n")
         );
@@ -504,56 +339,35 @@ async function checkAndConsumeAiLimit(input = {}) {
 }
 
 // ==================================================
-// READ USAGE
+// READ CURRENT COOLDOWN
 // ==================================================
 
 async function getAiUsage(guildId, userId) {
     if (
-        !validDiscordId(guildId) ||
-        !validDiscordId(userId)
+        !isValidDiscordId(guildId) ||
+        !isValidDiscordId(userId)
     ) {
         return null;
     }
 
-    const now = new Date();
-    const day = getUtcDay(now);
+    const collection = getUsageCollection();
 
-    const usage = getUsageCollection();
-
-    const [user, global] = await Promise.all([
-        usage.findOne({
-            _id: `user:${guildId}:${userId}:${day}`
-        }),
-
-        usage.findOne({
-            _id: `global:${day}`
-        })
-    ]);
-
-    const userCount = user?.count || 0;
-    const globalCount = global?.count || 0;
+    const record = await collection.findOne({
+        _id: getCooldownId(guildId, userId)
+    });
 
     return {
-        userUsed: userCount,
-        userRemaining: Math.max(
-            0,
-            AI_LIMITS.MAX_USER_REQUESTS_PER_DAY -
-            userCount
+        unlimited: true,
+
+        dailyLimit: null,
+        dailyRemaining: null,
+
+        cooldownSeconds: getSecondsRemaining(
+            record?.nextAllowedAt
         ),
 
-        globalUsed: globalCount,
-        globalRemaining: Math.max(
-            0,
-            AI_LIMITS.MAX_GLOBAL_REQUESTS_PER_DAY -
-            globalCount
-        ),
-
-        cooldownSeconds: secondsUntil(
-            user?.nextAllowedAt,
-            now
-        ),
-
-        resetAt: getNextUtcDay(now)
+        lastUsedAt: record?.lastUsedAt || null,
+        nextAllowedAt: record?.nextAllowedAt || null
     };
 }
 
