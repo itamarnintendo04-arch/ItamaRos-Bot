@@ -14,6 +14,7 @@ const economy = require("./service");
 const { buyProduct, rewardSummary } = require("./rewardPurchase");
 const { notifyItemUsed } = require("./useNotifications");
 const images = require("./itemImages");
+const { assertCanAccess, getAccess, visibleItems } = require("./kingsAccess");
 const {
     STORE_CHANNEL_ID,
     storeComponents,
@@ -193,6 +194,7 @@ async function processCheckout(interaction, mode, key) {
 
     let message = "";
     if (mode === "buy") {
+        await assertCanAccess(interaction.guild, interaction.user.id, item);
         const purchase = await buyProduct(
             interaction.guild, interaction.user, key, quantity
         );
@@ -276,6 +278,7 @@ async function useProduct(interaction, key) {
 }
 
 async function openBuyConfirmation(interaction, item) {
+    await assertCanAccess(interaction.guild, interaction.user.id, item);
     const cfg = await economy.getSettings(interaction.guildId);
     const isInstant = item.type === "reward";
     const hasExternal = Boolean(item.externalRewards?.length);
@@ -321,6 +324,7 @@ async function confirmBuy(interaction, key, expectedPrice) {
     if (!item || !item.enabled || item.stock === 0) {
         throw new Error("This product is no longer available.");
     }
+    await assertCanAccess(interaction.guild, interaction.user.id, item);
     if (item.price !== expectedPrice) {
         throw new Error(
             "The price has changed. Please open the shop again."
@@ -398,6 +402,7 @@ async function handleStoreInteraction(interaction) {
                 return true;
             }
 
+            await assertCanAccess(interaction.guild, interaction.user.id, item);
             await interaction.reply(await productDetails(
                 interaction.guildId, item
             ));
@@ -406,7 +411,10 @@ async function handleStoreInteraction(interaction) {
 
         if (interaction.isButton() && /^is:page:-?\d+$/.test(id)) {
             const page = Number(id.split(":")[2]);
-            const items = await economy.listItems(interaction.guildId);
+            const items = visibleItems(
+                await economy.listItems(interaction.guildId),
+                await getAccess(interaction.guild, interaction.user.id)
+            );
             await interaction.update({
                 components: storeComponents(items, page)
             });
@@ -462,6 +470,9 @@ async function handleStoreInteraction(interaction) {
                 interaction.guildId, key
             );
             if (!item) throw new Error("Product no longer exists.");
+            if (mode === "buy") {
+                await assertCanAccess(interaction.guild, interaction.user.id, item);
+            }
             if (mode === "buy" && (!item.enabled ||
                 item.stock === 0)) {
                 throw new Error("This item is not available for purchase.");
