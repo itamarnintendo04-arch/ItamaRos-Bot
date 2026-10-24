@@ -429,6 +429,25 @@ async function handleStoreInteraction(interaction) {
             return true;
         }
 
+        if (interaction.isButton() && id === "is:kings") {
+            const { makePrivateKingsShop } = require("./openShopCommand");
+            const privateShop = await makePrivateKingsShop(
+                interaction.guild, interaction.user.id
+            );
+            if (!privateShop) {
+                await interaction.reply(ephemeral(
+                    "👑 There are no Kings offers available for your current rank."
+                ));
+            } else {
+                await interaction.reply({
+                    ...privateShop,
+                    flags: MessageFlags.Ephemeral,
+                    allowedMentions: { parse: [] }
+                });
+            }
+            return true;
+        }
+
         if (interaction.isButton() && id === "is:wallet") {
             await interaction.reply(ephemeral(
                 await walletMessage(
