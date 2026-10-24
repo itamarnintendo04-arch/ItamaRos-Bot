@@ -3,13 +3,14 @@
 const { ChannelType, PermissionFlagsBits: P } =
     require("discord.js");
 const { getDatabase } = require("../../../database");
+const { totalXpForLevel } = require("../xp/progression");
 
 const ROLE_DEFINITIONS = Object.freeze([
-    { tier: 1, name: "Level 1", color: 0x72C7F6, requiredXp: 200, reward: 500 },
-    { tier: 2, name: "Level 2", color: 0xAA83FF, requiredXp: 400, reward: 1500 },
-    { tier: 3, name: "Level 3", color: 0xFFD166, requiredXp: 600, reward: 3000 },
-    { tier: 4, name: "Level 4", color: 0x7EE1C1, requiredXp: 800, reward: 4500 },
-    { tier: 5, name: "Level 5", color: 0xFF97C2, requiredXp: 1000, reward: 6000 }
+    { tier: 1, name: "Level 1", color: 0x72C7F6, requiredXp: totalXpForLevel(1), reward: 500 },
+    { tier: 2, name: "Level 2", color: 0xAA83FF, requiredXp: totalXpForLevel(2), reward: 1500 },
+    { tier: 3, name: "Level 3", color: 0xFFD166, requiredXp: totalXpForLevel(3), reward: 3000 },
+    { tier: 4, name: "Level 4", color: 0x7EE1C1, requiredXp: totalXpForLevel(4), reward: 4500 },
+    { tier: 5, name: "Level 5", color: 0xFF97C2, requiredXp: totalXpForLevel(5), reward: 6000 }
 ]);
 
 const CHANNELS = Object.freeze([
@@ -175,11 +176,16 @@ function boostRules() {
         "• **Coins and XP already earned are NEVER taken away because a boost stopped.**",
         "",
         "⭐ **ACTIVITY RANKS**",
-        "• **Level 1** — 200 chat-earned XP → a Level 1 role, 500 bonus coins and 500 bonus XP.",
-        "• **Level 2** — 400 chat-earned XP → a Level 2 role, 1,500 bonus coins and 1,500 bonus XP.",
-        "• **Level 3** — 600 chat-earned XP → Level 3 role, 3,000 bonus coins and XP.",
-        "• **Level 4** — 800 chat-earned XP → Level 4 role, 4,500 bonus coins and XP.",
-        "• **Level 5** — 1,000 chat-earned XP → Level 5 role, 6,000 bonus coins and XP.",
+        "• **Level 1** — " + totalXpForLevel(1) +
+            " activity XP → Level 1 role, 500 bonus coins and XP.",
+        "• **Level 2** — " + totalXpForLevel(2) +
+            " activity XP → Level 2 role, 1,500 bonus coins and XP.",
+        "• **Level 3** — " + totalXpForLevel(3) +
+            " activity XP → Level 3 role, 3,000 bonus coins and XP.",
+        "• **Level 4** — " + totalXpForLevel(4) +
+            " activity XP → Level 4 role, 4,500 bonus coins and XP.",
+        "• **Level 5** — " + totalXpForLevel(5) +
+            " activity XP → Level 5 role, 6,000 bonus coins and XP.",
         "",
         "🎁 Each rank reward is paid **once per user**.",
         "📈 Bonus XP does not count toward the next activity-rank milestone.",
@@ -187,7 +193,9 @@ function boostRules() {
         "",
         "👑 **KINGS RANKS (1–5)**",
         "• Active or permanently retained Kings members receive exactly one Kings Level role.",
-        "• Every 200 activity XP unlocks the next Kings rank, up to Level 5.",
+        "• Kings tiers follow rising activity-XP milestones: 0, " +
+            totalXpForLevel(1) + ", " + totalXpForLevel(2) + ", " +
+            totalXpForLevel(3) + ", " + totalXpForLevel(4) + ".",
         "• Rank bonus XP is excluded so milestones do not skip Kings levels.",
         "• Kings Level 5 can use all lower Kings categories and perks.",
         "• Administrators and staff with Manage Server can access every Kings category.",
