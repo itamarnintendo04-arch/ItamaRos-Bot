@@ -74,6 +74,9 @@ const xpCommand = require("./systems/xp/xpCommand");
 const invitesCommand = require("./systems/invites/command");
 const economyCommand = require("./systems/economy/command");
 const shopPanelCommand = require("./systems/economy/panelCommand");
+const storeCommand = require("./systems/economy/storeCommand");
+const openShopCommand = require("./systems/economy/openShopCommand");
+const xpLeaderboardCommand = require("./systems/xp/leaderboardCommand");
 const storeAdminCommand = require("./systems/economy/adminCommand");
 const tomorrowQuizCommand = require(
   "./systems/dailyQuestion/tomorrowCommand"
@@ -166,6 +169,9 @@ const commandModules = [
   tomorrowQuizCommand,
   invitesCommand,
   economyCommand,
+  openShopCommand,
+  storeCommand,
+  xpLeaderboardCommand,
   shopPanelCommand,
   storeAdminCommand
 ];
@@ -340,7 +346,7 @@ async function registerCommands() {
   // interactive shop. Buyers use the item-store panel and not /store.
   try {
     const existing = await rest.get(route);
-    const retired = new Set(["youtube", "store"]);
+    const retired = new Set(["youtube"]);
     for (const legacy of Array.isArray(existing) ? existing : []) {
       if (!retired.has(legacy.name)) continue;
       await rest.delete(

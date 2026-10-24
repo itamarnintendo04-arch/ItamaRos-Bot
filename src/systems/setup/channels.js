@@ -36,7 +36,7 @@ const SPECIFICATIONS = Object.freeze([
     {
         key: "shop", name: "item-store", env: "STORE_CHANNEL_ID",
         type: "text", policy: "normal",
-        intro: "🛒 **ItamaRos Shop & Coins**\n\nBrowse with /store list, purchase with /store buy, and check items using /store inventory.\n\nEarn virtual coins with /economy daily, /economy work, /economy question, and /economy math.\n\n🛡️ **Staff:** /store-admin manages shop items and balances."
+        intro: "🛒 **ItamaRos Item Store**\n\nUse /shop to open the public interactive shop. Use /store buy if buttons are unavailable. /store use reports item redemptions to staff.\n\nCheck your coins with /store bank and rankings with /store leaderboard and /xp-leaderboard.\n\n🛡️ Staff: /shop-panel for the command guide, /store-admin for products."
     },
     {
         key: "daily-question", name: "daily-question",

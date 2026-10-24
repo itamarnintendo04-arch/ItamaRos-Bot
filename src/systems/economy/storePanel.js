@@ -60,7 +60,7 @@ function storeEmbed(items, symbol) {
                 : "🌟 New products will appear here soon!",
             items.length > featured.length
                 ? "\n+" + (items.length - featured.length) +
-                    " more items in the menu below."
+                    " more items available with /store list."
                 : "",
             "",
             "**STORE COMMANDS — AVAILABLE TO EVERYONE**",
