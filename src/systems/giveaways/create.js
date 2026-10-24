@@ -82,6 +82,7 @@ function createGiveawayEmbed({
     prize,
     hostId,
     winnerCount,
+    minLevel = 0,
     endsAt,
     imageUrl
 }) {
@@ -105,6 +106,7 @@ function createGiveawayEmbed({
                 "",
                 `**👑 Hosted by:** <@${hostId}>`,
                 `**🏆 Winners:** ${winnerCount}`,
+                `**⭐ Minimum level:** ${minLevel > 0 ? `Level ${minLevel}+` : "Everyone"}`,
                 "**Participants:** 0",
                 "",
                 `**📅 Ends:** <t:${timestamp}:F>`,
@@ -204,6 +206,7 @@ async function createGiveaway({
     prize,
     duration,
     winners,
+    minLevel = 0,
     image = null
 }) {
     if (
@@ -265,6 +268,14 @@ async function createGiveaway({
         );
     }
 
+    if (!Number.isSafeInteger(minLevel) ||
+        minLevel < 0 || minLevel > 1000) {
+        return failure(
+            "INVALID_MIN_LEVEL",
+            "The required level must be between 0 and 1000."
+        );
+    }
+
     if (!isValidImage(image)) {
         return failure(
             "INVALID_IMAGE",
@@ -306,6 +317,7 @@ async function createGiveaway({
         imageUrl,
 
         winnerCount: winners,
+        minLevel,
 
         participants: [],
         removedParticipants: [],
@@ -337,6 +349,7 @@ async function createGiveaway({
             prize: sanitizedPrize,
             hostId: host.id,
             winnerCount: winners,
+            minLevel,
             endsAt,
             imageUrl
         });

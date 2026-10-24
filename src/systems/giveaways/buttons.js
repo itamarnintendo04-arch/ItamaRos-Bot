@@ -430,6 +430,20 @@ async function handleGiveawayButtons(interaction) {
             : await leaveGiveaway(giveawayId, interaction.user.id);
 
         if (!result?.success) {
+            if (isJoin && result.reason === "LEVEL_TOO_LOW") {
+                await interaction.editReply({
+                    embeds: [
+                        createResponse(
+                            "🔒 Level Required",
+                            `This giveaway requires **Level ${result.requiredLevel}+**. Your current level is **${result.currentLevel}**. Keep chatting to earn XP!`,
+                            COLORS.WARNING
+                        )
+                    ],
+                    components: []
+                });
+                return true;
+            }
+
             if (isJoin && result.reason === "ALREADY_JOINED") {
                 // The next ENTER from an existing participant
                 // offers an ephemeral LEAVE button. We don't

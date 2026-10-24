@@ -110,6 +110,7 @@ async function handleGiveawayInteraction(interaction) {
             const prize = interaction.options.getString("prize", true);
             const durationValue = interaction.options.getString("duration", true);
             const winners = interaction.options.getInteger("winners", true);
+            const minLevel = interaction.options.getInteger("min_level") ?? 0;
             const image = interaction.options.getAttachment("image");
 
             const duration = parseDuration(durationValue);
@@ -155,6 +156,7 @@ async function handleGiveawayInteraction(interaction) {
                 prize,
                 duration,
                 winners,
+                minLevel,
                 image
             });
 

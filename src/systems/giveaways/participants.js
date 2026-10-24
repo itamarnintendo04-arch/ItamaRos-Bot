@@ -3,6 +3,7 @@ const { ObjectId } = require("mongodb");
 
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
+const { getLevel } = require("../xp/service");
 
 const RESULT = Object.freeze({
     INVALID_GIVEAWAY: "INVALID_GIVEAWAY",
@@ -72,7 +73,9 @@ async function classifyFailure(
                 status: 1,
                 endsAt: 1,
                 participants: 1,
-                removedParticipants: 1
+                removedParticipants: 1,
+                minLevel: 1,
+                guildId: 1
             }
         }
     );
@@ -109,6 +112,19 @@ async function classifyFailure(
         return failure(RESULT.ALREADY_JOINED);
     }
 
+    if (action === "join" && (giveaway.minLevel ?? 0) > 0) {
+        const currentLevel = await getLevel(giveaway.guildId, userId);
+
+        if (currentLevel < giveaway.minLevel) {
+            return {
+                success: false,
+                reason: "LEVEL_TOO_LOW",
+                currentLevel,
+                requiredLevel: giveaway.minLevel
+            };
+        }
+    }
+
     if (
         action === "leave" &&
         !participants.includes(userId)
@@ -137,6 +153,42 @@ async function joinGiveaway(giveawayId, userId) {
 
     const collection = getCollection();
     const now = new Date();
+
+    const giveaway = await collection.findOne(
+        { _id: new ObjectId(giveawayId) },
+        {
+            projection: {
+                guildId: 1,
+                minLevel: 1,
+                participants: 1,
+                removedParticipants: 1
+            }
+        }
+    );
+
+    if (!giveaway) {
+        return failure(RESULT.NOT_FOUND);
+    }
+
+    // A repeated ENTER must still offer the private
+    // leave button even if the user's level has fallen.
+    if (!giveaway.participants?.includes(userId) &&
+        !giveaway.removedParticipants?.includes(userId) &&
+        (giveaway.minLevel ?? 0) > 0) {
+        const currentLevel = await getLevel(
+            giveaway.guildId,
+            userId
+        );
+
+        if (currentLevel < giveaway.minLevel) {
+            return {
+                success: false,
+                reason: "LEVEL_TOO_LOW",
+                currentLevel,
+                requiredLevel: giveaway.minLevel
+            };
+        }
+    }
 
     const filter = {
         _id: new ObjectId(giveawayId),

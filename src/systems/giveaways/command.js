@@ -81,6 +81,16 @@ const data = new SlashCommandBuilder()
                     )
                     .setRequired(false)
             )
+            .addIntegerOption(option =>
+                option
+                    .setName("min_level")
+                    .setDescription(
+                        "Minimum level needed to enter (0 = everyone)"
+                    )
+                    .setMinValue(0)
+                    .setMaxValue(1000)
+                    .setRequired(false)
+            )
     )
 
     // =============================================

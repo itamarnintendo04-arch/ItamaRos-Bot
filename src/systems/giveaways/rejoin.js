@@ -11,6 +11,7 @@ const {
 const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
+const { getLevel } = require("../xp/service");
 
 const COLLECTION = "giveaway_rejoin_requests";
 
@@ -543,6 +544,32 @@ async function handleRejoinApproval(interaction) {
             });
 
             return true;
+        }
+
+        if (approved && (giveaway.minLevel ?? 0) > 0) {
+            const memberLevel = await getLevel(
+                interaction.guildId,
+                userId
+            );
+
+            if (memberLevel < giveaway.minLevel) {
+                await requestsCollection().updateOne(
+                    { _id: id, status: REQUEST_STATUS.PROCESSING },
+                    {
+                        $set: {
+                            status: REQUEST_STATUS.PENDING,
+                            reviewedBy: null,
+                            reviewedAt: null
+                        }
+                    }
+                );
+
+                await interaction.editReply({
+                    content:
+                        `❌ This user is Level ${memberLevel}, but the giveaway requires Level ${giveaway.minLevel}+.`
+                });
+                return true;
+            }
         }
 
         if (approved) {

@@ -67,6 +67,12 @@ const giveawayTicketCommand = require(
   "./systems/tickets/giveawayCommand"
 );
 
+const levelCommand = require("./systems/xp/levelCommand");
+const xpCommand = require("./systems/xp/xpCommand");
+const tomorrowQuizCommand = require(
+  "./systems/dailyQuestion/tomorrowCommand"
+);
+
 // ==========================================
 // IMPORT INTERACTION HANDLERS
 // ==========================================
@@ -142,7 +148,10 @@ const commandModules = [
     execute: handleDropInteraction
   },
 
-  giveawayTicketCommand
+  giveawayTicketCommand,
+  levelCommand,
+  xpCommand,
+  tomorrowQuizCommand
 ];
 
 for (const command of commandModules) {

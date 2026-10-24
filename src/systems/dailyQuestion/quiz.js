@@ -938,5 +938,7 @@ async function handleQuizInteraction(interaction) {
 module.exports = {
   startQuizScheduler,
   stopQuizScheduler,
-  handleQuizInteraction
+  handleQuizInteraction,
+  getTomorrowQuizDate: () => tomorrow(localTime().date),
+  normalizeAnswer
 };
