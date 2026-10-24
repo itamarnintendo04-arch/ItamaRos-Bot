@@ -77,8 +77,8 @@ async function productDetails(guildId, item) {
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId("is:buy:" + item.key)
-                    .setLabel("Buy")
-                    .setEmoji("🛍️")
+                    .setLabel("Buy • " + number(item.price) + " coins")
+                    .setEmoji("🪙")
                     .setStyle(ButtonStyle.Success)
                     .setDisabled(!item.enabled || item.stock === 0),
                 new ButtonBuilder()
@@ -411,10 +411,9 @@ async function handleStoreInteraction(interaction) {
 
         if (interaction.isButton() && /^is:page:-?\d+$/.test(id)) {
             const page = Number(id.split(":")[2]);
-            const items = visibleItems(
-                await economy.listItems(interaction.guildId),
-                await getAccess(interaction.guild, interaction.user.id)
-            );
+            // This message is public: navigating must NEVER expose Kings items.
+            const items = (await economy.listItems(interaction.guildId))
+                .filter(item => item.kingsOnly !== true);
             await interaction.update({
                 components: storeComponents(items, page)
             });
