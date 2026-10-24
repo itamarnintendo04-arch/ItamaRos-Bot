@@ -151,6 +151,11 @@ function storeComponents(items, requestedPage = 0) {
             .setCustomId("is:wallet")
             .setLabel("My wallet")
             .setEmoji("🪙")
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId("is:kings")
+            .setLabel("Kings offers")
+            .setEmoji("👑")
             .setStyle(ButtonStyle.Secondary)
     );
     rows.push(nav);
