@@ -214,7 +214,8 @@ async function createItem(guildId, info) {
             rewards.coins < 0 || rewards.coins > MAX_AMOUNT ||
             (rewards.roleId !== null &&
              !/^\d{17,20}$/.test(rewards.roleId || "")) ||
-            (!rewards.xp && !rewards.coins && !rewards.roleId)) {
+            (!rewards.xp && !rewards.coins && !rewards.roleId &&
+             !(info.externalRewards || []).length)) {
             fail("Select at least one valid reward: XP, coins or role.");
         }
     }
