@@ -74,8 +74,8 @@ function addProperties(sub, required) {
             .setDescription("Only Kings members (and staff) can see and buy this item")
             .setRequired(false))
         .addIntegerOption(o => o.setName("kings_min_level")
-            .setDescription("Required XP level for Kings (0-1000); staff bypass")
-            .setMinValue(0).setMaxValue(1000).setRequired(false));
+            .setDescription("Required Kings rank (1-5); staff bypass")
+            .setMinValue(1).setMaxValue(5).setRequired(false));
 }
 
 data.addSubcommand(s => addProperties(
@@ -181,7 +181,8 @@ function getProperties(options, isCreate) {
     if (kingsOnly !== null) props.kingsOnly = kingsOnly;
     if (kingsMinLevel !== null) props.minKingsLevel = kingsMinLevel;
     if (isCreate && kingsOnly === null) props.kingsOnly = false;
-    if (isCreate && kingsMinLevel === null) props.minKingsLevel = 0;
+    if (isCreate && kingsMinLevel === null) props.minKingsLevel = kingsOnly ? 1 : 0;
+    if (isCreate && kingsMinLevel !== null && kingsOnly === null) props.kingsOnly = true;
 
     const role = options.getRole("role");
     if (role) props.roleId = role.id;
