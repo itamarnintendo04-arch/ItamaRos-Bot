@@ -31,7 +31,8 @@ function addProperties(sub, required) {
             .addChoices(
                 { name: "Collectible", value: "collectible" },
                 { name: "Consumable", value: "consumable" },
-                { name: "Discord role", value: "role" }
+                { name: "Discord role (legacy)", value: "role" },
+                { name: "Instant reward (XP/coins/role)", value: "reward" }
             ));
     } else {
         sub.addStringOption(o => o.setName("name")
@@ -47,7 +48,8 @@ function addProperties(sub, required) {
             .addChoices(
                 { name: "Collectible", value: "collectible" },
                 { name: "Consumable", value: "consumable" },
-                { name: "Discord role", value: "role" }
+                { name: "Discord role (legacy)", value: "role" },
+                { name: "Instant reward (XP/coins/role)", value: "reward" }
             ));
     }
 
@@ -72,7 +74,12 @@ function addProperties(sub, required) {
 
 data.addSubcommand(s => addProperties(
     s.setName("create").setDescription("Create a new product"), true
-));
+).addIntegerOption(o => o.setName("reward_xp")
+    .setDescription("Instant XP after purchase (0 = none; locked)")
+    .setMinValue(0).setMaxValue(200000).setRequired(false))
+.addIntegerOption(o => o.setName("reward_coins")
+    .setDescription("Instant coins after purchase (0 = none; locked)")
+    .setMinValue(0).setMaxValue(eco.MAX_AMOUNT).setRequired(false)));
 
 data.addSubcommand(s => addProperties(
     s.setName("update").setDescription("Edit an existing product")
@@ -165,6 +172,22 @@ function getProperties(options, isCreate) {
         props.name = options.getString("name", true);
         props.price = options.getInteger("price", true);
         props.type = options.getString("type", true);
+        if (props.type === "reward") {
+            props.rewards = {
+                xp: options.getInteger("reward_xp") ?? 0,
+                coins: options.getInteger("reward_coins") ?? 0,
+                roleId: role?.id || null
+            };
+            if (!props.rewards.xp && !props.rewards.coins &&
+                !props.rewards.roleId) {
+                throw new Error(
+                    "Choose XP, coins, a role, or any combination."
+                );
+            }
+        } else if (options.getInteger("reward_xp") ||
+                   options.getInteger("reward_coins")) {
+            throw new Error("XP and coin rewards require type Instant reward.");
+        }
     }
     return { props, role };
 }
@@ -243,7 +266,14 @@ async function execute(interaction) {
 
             response = "✅ **" + item.name + "** " +
                 (create ? "created" : "updated") +
-                " successfully. Item ID: " + item.key;
+                " successfully. Item ID: " + item.key +
+                (create && item.type === "reward"
+                    ? "\n🎁 Instant rewards: " +
+                      (item.rewards.xp ? item.rewards.xp + " XP " : "") +
+                      (item.rewards.coins ? item.rewards.coins + " coins " : "") +
+                      (item.rewards.roleId ? "<@&" + item.rewards.roleId + "> " : "") +
+                      "\n🔒 Reward types and amounts cannot be edited later."
+                    : "");
             refresh = true;
         } else if (action === "remove-item") {
             const key = interaction.options.getString("item", true);
