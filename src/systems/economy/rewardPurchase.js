@@ -31,7 +31,8 @@ async function validateRewardRole(member, roleId) {
     if (forbidden.some(p => role.permissions.has(p))) {
         fail("This reward role has unsafe permissions.");
     }
-    if (role.name === "Kings" ||
+    if (role.id === process.env.KINGS_ROLE_ID ||
+        /^kings?(?:[ |:-]*(?:level|lvl|rank|tier)?[ -]*[0-9]+)?$/i.test(role.name) ||
         /^Level [1-3]$/.test(role.name)) {
         fail("This special role cannot be sold.");
     }
