@@ -2,8 +2,8 @@
 
 const { PermissionFlagsBits } = require("discord.js");
 const { getDatabase } = require("../../../database");
-const { getLevel } = require("../xp/service");
-const { tierForXp, MAX_RANK, baseKingsRole } = require("../kings/ranks");
+
+const { MAX_RANK, baseKingsRole, getMemberTier } = require("../kings/ranks");
 
 const MAX_KINGS_LEVEL = MAX_RANK;
 
@@ -41,8 +41,8 @@ async function getAccess(guild, userId) {
     const king = Boolean(roleId && member.roles.cache.has(roleId));
     if (!king) return { staff: false, king: false, level: 0 };
 
-    const xpLevel = await getLevel(guild.id, userId);
-    return { staff: false, king: true, level: tierForXp(xpLevel * 200) };
+    const level = await getMemberTier(member, await baseKingsRole(guild));
+    return { staff: false, king: true, level };
 }
 
 async function assertCanAccess(guild, userId, item) {
