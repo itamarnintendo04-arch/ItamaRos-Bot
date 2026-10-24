@@ -2,10 +2,10 @@
 
 const { ChannelType, PermissionFlagsBits: P } = require("discord.js");
 const { getDatabase } = require("../../../database");
-const { getLevel } = require("../xp/service");
+const { XP_PER_LEVEL } = require("../xp/service");
 
 // Kings ranks are separate from general XP reward roles.
-// Every 200 total XP unlocks another Kings tier, up to tier five.
+// Every 200 activity XP unlocks another Kings tier, up to tier five.
 const RANKS = Object.freeze([
     { tier: 1, requiredXp: 0, color: 0xB6A1FF, category: "👑 KINGS",
       channels: ["lounge", "news", "help"] },
@@ -234,8 +234,14 @@ async function ensureRankInfrastructure(client, { refresh = false } = {}) {
 
 async function getMemberTier(member, baseRole) {
     if (!member?.roles.cache.has(baseRole.id)) return 0;
-    const level = await getLevel(member.guild.id, member.id);
-    return tierForXp(level * 200);
+    const record = await getDatabase().collection("member_xp").findOne({
+        _id: member.guild.id + ":" + member.id
+    });
+    // Milestone rewards award bonus XP. Only activity/staff XP
+    // progresses the Kings ladder so a milestone cannot skip ranks.
+    const earned = Math.max(0, Number(record?.activityXp ??
+        (record?.xp || 0) - (record?.bonusXpAwarded || 0)) || 0);
+    return tierForXp(earned);
 }
 
 async function syncMemberRank(member, { infrastructure = null } = {}) {
