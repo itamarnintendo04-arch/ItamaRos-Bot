@@ -6,6 +6,7 @@ const { notifyItemUsed } = require("./useNotifications");
 const { buyProduct, rewardSummary } = require("./rewardPurchase");
 const { productDetails } = require("./storeInteraction");
 const { clean } = require("./storePanel");
+const { getAccess, visibleItems, assertCanAccess } = require("./kingsAccess");
 
 const data = new SlashCommandBuilder()
     .setName("store")
@@ -90,7 +91,10 @@ async function execute(interaction) {
         let response = "";
 
         if (action === "list") {
-            const items = await eco.listItems(guildId);
+            const items = visibleItems(
+                await eco.listItems(guildId),
+                await getAccess(interaction.guild, userId)
+            );
             response = "🛍️ **Available Products**\n\n" +
                 (items.length ? items.map(item =>
                     "📦 **" + clean(item.name, 70) + "** • " +
@@ -104,7 +108,8 @@ async function execute(interaction) {
                 ).join("\n\n") : "There are no products for sale.");
         } else if (action === "info") {
             const item = await eco.getItem(guildId, key);
-            if (!item) throw new Error("Product not found.");
+            if (!item || !item.enabled) throw new Error("Product not found.");
+            await assertCanAccess(interaction.guild, userId, item);
             const payload = await productDetails(guildId, item);
             // The deferred reply is already ephemeral.
             delete payload.flags;
@@ -133,6 +138,19 @@ async function execute(interaction) {
                     ? "🎁 Delivered instantly: " + rewardSummary(result.item)
                     : "Your purchase is saved in your inventory.");
             if (result.instant) {
+                if (result.item.externalRewards?.length) {
+                    try {
+                        const { ensureShopTicket } = require("./shopTickets");
+                        const ticket = await ensureShopTicket(
+                            interaction.guild, interaction.user,
+                            result.item, interaction.id
+                        );
+                        response += "\\n🎫 Private delivery ticket: <#" + ticket.id + ">";
+                    } catch (error) {
+                        console.error("[Shop] Paid order ticket failed:", error);
+                        response += "\\n⚠️ Purchase succeeded, but delivery ticket could not be opened. Contact staff.";
+                    }
+                }
                 await notifyItemUsed({
                     guild: interaction.guild,
                     user: interaction.user,
