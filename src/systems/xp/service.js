@@ -81,10 +81,41 @@ async function awardMessageXp(message) {
                 { lastMessageXpAt: { $lte: cutoff } }
             ]
         },
-        {
-            $inc: { xp: XP_PER_MESSAGE },
-            $set: { lastMessageXpAt: now, updatedAt: now }
-        }
+        [{
+            $set: {
+                xp: {
+                    $min: [
+                        MAX_XP,
+                        { $add: [
+                            { $ifNull: ["$xp", 0] },
+                            XP_PER_MESSAGE
+                        ] }
+                    ]
+                },
+                // Chat activity counts toward rank levels.
+                // Rank XP bonuses do NOT increment this value.
+                activityXp: {
+                    $min: [
+                        MAX_XP,
+                        { $add: [
+                            { $ifNull: [
+                                "$activityXp",
+                                { $max: [
+                                    0,
+                                    { $subtract: [
+                                        { $ifNull: ["$xp", 0] },
+                                        { $ifNull: ["$bonusXpAwarded", 0] }
+                                    ] }
+                                ] }
+                            ] },
+                            XP_PER_MESSAGE
+                        ] }
+                    ]
+                },
+                lastMessageXpAt: now,
+                updatedAt: now
+            }
+        }]
     );
 
     if (update.modifiedCount) {
@@ -99,6 +130,8 @@ async function awardMessageXp(message) {
             guildId,
             userId,
             xp: XP_PER_MESSAGE,
+            activityXp: XP_PER_MESSAGE,
+            bonusXpAwarded: 0,
             lastMessageXpAt: now,
             updatedAt: now
         });
