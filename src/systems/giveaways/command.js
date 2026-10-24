@@ -88,7 +88,6 @@ const data = new SlashCommandBuilder()
                         "Minimum level needed to enter (0 = everyone)"
                     )
                     .setMinValue(0)
-                    .setMaxValue(1000)
                     .setRequired(false)
             )
     )
