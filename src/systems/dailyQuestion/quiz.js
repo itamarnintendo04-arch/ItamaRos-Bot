@@ -95,8 +95,6 @@ function quizId(guildId, date) {
   return `${guildId}:${date}`;
 }
 
-// Accept minor differences in punctuation
-// and capitalization.
 function normalizeAnswer(value) {
   return String(value ?? "")
     .normalize("NFKC")
@@ -227,14 +225,14 @@ function answerButton(date, disabled = false) {
 async function publishQuestion(client, date) {
   const guild = await getGuild(client);
 
-  const channel = await getTextChannel(
+  const questionChannel = await getTextChannel(
     client,
     process.env.DAILY_QUESTION_CHANNEL_ID
   );
 
   if (
-    !channel ||
-    channel.guildId !== guild.id
+    !questionChannel ||
+    questionChannel.guildId !== guild.id
   ) {
     return;
   }
@@ -253,7 +251,6 @@ async function publishQuestion(client, date) {
     return;
   }
 
-  // Reserve publishing in MongoDB.
   const reservation = await quizzes().updateOne(
     {
       _id: id,
@@ -269,175 +266,245 @@ async function publishQuestion(client, date) {
     return;
   }
 
-  const message = await channel.send({
-    content: "@everyone",
-    embeds: [questionEmbed(quiz)],
-    components: [answerButton(date)],
-    allowedMentions: {
-      parse: ["everyone"]
-    }
-  });
-
-  await quizzes().updateOne(
-    { _id: id },
-    {
-      $set: {
-        messageId: message.id,
-        channelId: channel.id,
-        publishedAt: new Date()
-      },
-      $unset: {
-        publishing: ""
+  try {
+    const message = await questionChannel.send({
+      content: "@everyone",
+      embeds: [questionEmbed(quiz)],
+      components: [answerButton(date)],
+      allowedMentions: {
+        parse: ["everyone"]
       }
-    }
-  );
+    });
 
-  console.log(
-    `[Daily Quiz] Published ${date}`
-  );
+    await quizzes().updateOne(
+      { _id: id },
+      {
+        $set: {
+          messageId: message.id,
+          channelId: questionChannel.id,
+          publishedAt: new Date()
+        },
+        $unset: {
+          publishing: ""
+        }
+      }
+    );
+
+    console.log(
+      `[Daily Quiz] Published ${date}`
+    );
+  } catch (error) {
+    await quizzes().updateOne(
+      {
+        _id: id,
+        messageId: { $exists: false }
+      },
+      {
+        $unset: { publishing: "" }
+      }
+    ).catch(() => {});
+
+    throw error;
+  }
 }
 
 // ======================================
-// 21:00 - REVEAL ANSWER
+// 21:00 - REVEAL AND ANNOUNCE
 // ======================================
 
 async function revealQuestion(client, date) {
   const guild = await getGuild(client);
-
   const id = quizId(guild.id, date);
 
   const quiz = await quizzes().findOne({
     _id: id
   });
 
-  if (
-    !quiz?.messageId ||
-    quiz.revealedAt
-  ) {
+  if (!quiz?.messageId) {
     return;
   }
 
+  // Winners are announced in the SAME channel
+  // where the daily question was published.
   const questionChannel = await getTextChannel(
     client,
     quiz.channelId
   );
 
-  const generalChannel = await getTextChannel(
-    client,
-    process.env.GENERAL_CHANNEL_ID
-  );
-
   if (
     !questionChannel ||
-    !generalChannel ||
-    generalChannel.guildId !== guild.id
+    questionChannel.guildId !== guild.id
   ) {
     return;
   }
 
-  const reservation = await quizzes().updateOne(
-    {
-      _id: id,
-      revealedAt: { $exists: false },
-      revealing: { $exists: false }
-    },
-    {
-      $set: { revealing: true }
-    }
-  );
-
-  if (!reservation.modifiedCount) {
-    return;
-  }
-
-  // Edit the original question.
-  const message = await questionChannel.messages
-    .fetch(quiz.messageId);
-
-  await message.edit({
-    content: "🏁 **Today's quiz is over!**",
-    embeds: [questionEmbed(quiz, true)],
-    components: [answerButton(date, true)],
-    allowedMentions: {
-      parse: []
-    }
-  });
-
-  await quizzes().updateOne(
-    { _id: id },
-    {
-      $set: {
-        revealedAt: new Date()
+  // First reveal the correct answer.
+  if (!quiz.revealedAt) {
+    const reservation = await quizzes().updateOne(
+      {
+        _id: id,
+        revealedAt: { $exists: false },
+        revealing: { $exists: false }
       },
-      $unset: {
-        revealing: ""
+      {
+        $set: { revealing: true }
       }
-    }
-  );
-
-  // Find ALL correct participants.
-  const winningEntries = await answers()
-    .find({ quizId: id })
-    .sort({ submittedAt: 1 })
-    .toArray();
-
-  const winnerIds = winningEntries.map(
-    entry => entry.userId
-  );
-
-  // No correct answers.
-  if (!winnerIds.length) {
-    await generalChannel.send({
-      content:
-        `🏆 **Daily Quiz Results (${date})**\n` +
-        "No correct answers today!\n" +
-        `✅ Answer: **${quiz.answer}**`,
-      allowedMentions: {
-        parse: []
-      }
-    });
-
-    return;
-  }
-
-  // Announce all winners in manageable groups.
-  for (
-    let index = 0;
-    index < winnerIds.length;
-    index += 40
-  ) {
-    const group = winnerIds.slice(
-      index,
-      index + 40
     );
 
-    const header = index === 0
-      ? (
-          `🏆 **Daily Quiz Winners (${date})**\n` +
-          `🎉 ${winnerIds.length} winner(s)!\n\n`
-        )
-      : "🏆 **More winners!**\n\n";
+    if (!reservation.modifiedCount) {
+      return;
+    }
 
-    const mentions = group
-      .map(userId => `<@${userId}>`)
-      .join(" ");
+    try {
+      const message =
+        await questionChannel.messages.fetch(
+          quiz.messageId
+        );
 
-    const footer = index === 0
-      ? `\n\n✅ Answer: **${quiz.answer}**`
-      : "";
+      await message.edit({
+        content: "🏁 **Today's quiz is over!**",
+        embeds: [questionEmbed(quiz, true)],
+        components: [
+          answerButton(date, true)
+        ],
+        allowedMentions: {
+          parse: []
+        }
+      });
 
-    await generalChannel.send({
-      content: header + mentions + footer,
-      allowedMentions: {
-        parse: [],
-        users: group
-      }
-    });
+      await quizzes().updateOne(
+        { _id: id },
+        {
+          $set: {
+            revealedAt: new Date()
+          },
+          $unset: {
+            revealing: ""
+          }
+        }
+      );
+    } catch (error) {
+      await quizzes().updateOne(
+        { _id: id },
+        {
+          $unset: { revealing: "" }
+        }
+      ).catch(() => {});
+
+      throw error;
+    }
   }
 
-  console.log(
-    `[Daily Quiz] ${winnerIds.length} winners`
-  );
+  // Avoid announcing results twice.
+  const resultReservation =
+    await quizzes().updateOne(
+      {
+        _id: id,
+        announcedAt: { $exists: false },
+        announcing: { $exists: false }
+      },
+      {
+        $set: { announcing: true }
+      }
+    );
+
+  if (!resultReservation.modifiedCount) {
+    return;
+  }
+
+  try {
+    const winningEntries = await answers()
+      .find({ quizId: id })
+      .sort({ submittedAt: 1 })
+      .toArray();
+
+    const winnerIds = [
+      ...new Set(
+        winningEntries.map(
+          entry => entry.userId
+        )
+      )
+    ];
+
+    if (!winnerIds.length) {
+      await questionChannel.send({
+        content:
+          `🏆 **Daily Quiz Results (${date})**\n\n` +
+          "Nobody answered correctly today!\n\n" +
+          `✅ Correct answer: **${quiz.answer}**\n\n` +
+          "See you tomorrow! 💜",
+        allowedMentions: {
+          parse: []
+        }
+      });
+    } else {
+      for (
+        let index = 0;
+        index < winnerIds.length;
+        index += 40
+      ) {
+        const group = winnerIds.slice(
+          index,
+          index + 40
+        );
+
+        const header = index === 0
+          ? (
+              "🏆 **DAILY QUIZ WINNERS!** 🏆\n\n" +
+              `🎉 **${winnerIds.length} winners!**\n\n`
+            )
+          : (
+              "🏆 **More Daily Quiz Winners!**\n\n"
+            );
+
+        const mentions = group
+          .map(userId => `<@${userId}>`)
+          .join(" ");
+
+        const footer = index === 0
+          ? (
+              `\n\n✅ Correct answer: **${quiz.answer}**` +
+              "\n\n💜 Congratulations!"
+            )
+          : "";
+
+        await questionChannel.send({
+          content: header + mentions + footer,
+          allowedMentions: {
+            parse: [],
+            users: group
+          }
+        });
+      }
+    }
+
+    await quizzes().updateOne(
+      { _id: id },
+      {
+        $set: {
+          announcedAt: new Date(),
+          winnerCount: winnerIds.length
+        },
+        $unset: {
+          announcing: ""
+        }
+      }
+    );
+
+    console.log(
+      `[Daily Quiz] Announced ${winnerIds.length} ` +
+      `winner(s) in ${questionChannel.id}`
+    );
+  } catch (error) {
+    await quizzes().updateOne(
+      { _id: id },
+      {
+        $unset: { announcing: "" }
+      }
+    ).catch(() => {});
+
+    throw error;
+  }
 }
 
 // ======================================
@@ -446,11 +513,7 @@ async function revealQuestion(client, date) {
 
 async function promptOwner(client, targetDate) {
   const guild = await getGuild(client);
-
-  const id = quizId(
-    guild.id,
-    targetDate
-  );
+  const id = quizId(guild.id, targetDate);
 
   const existing = await quizzes().findOne({
     _id: id
@@ -463,7 +526,6 @@ async function promptOwner(client, targetDate) {
     return;
   }
 
-  // Prevent repeated DMs after restarts.
   try {
     await prompts().insertOne({
       _id: id,
@@ -526,26 +588,29 @@ async function tick(client) {
   try {
     const { date, minutes } = localTime();
 
-    // 07:00-07:59: publish if not published
+    const publishAt =
+      SETTINGS.questionHour * 60;
+
+    const revealAt =
+      SETTINGS.revealHour * 60;
+
     if (
-      minutes >= 420 &&
-      minutes < 480
+      minutes >= publishAt &&
+      minutes < publishAt + 60
     ) {
       await publishQuestion(client, date);
     }
 
-    // 21:00-21:59: reveal the answer
     if (
-      minutes >= 1260 &&
-      minutes < 1320
+      minutes >= revealAt &&
+      minutes < revealAt + 60
     ) {
       await revealQuestion(client, date);
     }
 
-    // From 21:05: ask owner about tomorrow
     if (
-      minutes >=
-      1260 + SETTINGS.ownerPromptMinute
+      minutes >= revealAt +
+      SETTINGS.ownerPromptMinute
     ) {
       await promptOwner(
         client,
@@ -573,8 +638,8 @@ function startQuizScheduler(client) {
   );
 
   console.log(
-    "[Daily Quiz] Scheduled for " +
-    "07:00 / 21:00 Israel time."
+    "[Daily Quiz] 07:00 question, " +
+    "21:00 results, 21:05 owner DM."
   );
 }
 
@@ -606,10 +671,7 @@ async function handleQuizInteraction(interaction) {
     minutes
   } = localTime();
 
-  // ----------------------------------
   // OWNER OPENS QUESTION FORM
-  // ----------------------------------
-
   if (
     interaction.isButton() &&
     customId.startsWith("dq:prepare:")
@@ -655,10 +717,7 @@ async function handleQuizInteraction(interaction) {
     return true;
   }
 
-  // ----------------------------------
   // OWNER SAVES QUESTION AND ANSWER
-  // ----------------------------------
-
   if (
     interaction.isModalSubmit() &&
     customId.startsWith("dq:save:")
@@ -744,10 +803,7 @@ async function handleQuizInteraction(interaction) {
     return true;
   }
 
-  // ----------------------------------
   // MEMBER OPENS ANSWER FORM
-  // ----------------------------------
-
   if (
     interaction.isButton() &&
     customId.startsWith("dq:answer:")
@@ -764,7 +820,7 @@ async function handleQuizInteraction(interaction) {
       !interaction.inGuild() ||
       interaction.guildId !== guild.id ||
       date !== today ||
-      minutes >= 1260 ||
+      minutes >= SETTINGS.revealHour * 60 ||
       !record?.messageId ||
       record.revealedAt
     ) {
@@ -795,10 +851,7 @@ async function handleQuizInteraction(interaction) {
     return true;
   }
 
-  // ----------------------------------
   // CHECK MEMBER ANSWER
-  // ----------------------------------
-
   if (
     interaction.isModalSubmit() &&
     customId.startsWith("dq:submit:")
@@ -817,7 +870,7 @@ async function handleQuizInteraction(interaction) {
       !interaction.inGuild() ||
       interaction.guildId !== guild.id ||
       date !== today ||
-      minutes >= 1260 ||
+      minutes >= SETTINGS.revealHour * 60 ||
       !record?.messageId ||
       record.revealedAt
     ) {
@@ -834,10 +887,9 @@ async function handleQuizInteraction(interaction) {
     const submittedAnswer = interaction.fields
       .getTextInputValue("answer");
 
-    const correct = (
+    const correct =
       normalizeAnswer(submittedAnswer) ===
-      normalizeAnswer(record.answer)
-    );
+      normalizeAnswer(record.answer);
 
     if (!correct) {
       await interaction.reply(
@@ -850,7 +902,6 @@ async function handleQuizInteraction(interaction) {
       return true;
     }
 
-    // Each user can win only once.
     try {
       await answers().insertOne({
         _id: `${id}:${interaction.user.id}`,
