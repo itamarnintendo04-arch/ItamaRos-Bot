@@ -34,8 +34,8 @@ const SPECIFICATIONS = Object.freeze([
         intro: "⚡ **Drops**\n\nBe the first to press the claim button to win a drop!\n\n🛡️ **Staff:** /drop start publishes a new drop in this channel."
     },
     {
-        key: "shop", name: "shop", type: "text",
-        policy: "normal",
+        key: "shop", name: "item-store", env: "STORE_CHANNEL_ID",
+        type: "text", policy: "normal",
         intro: "🛒 **ItamaRos Shop & Coins**\n\nBrowse with /store list, purchase with /store buy, and check items using /store inventory.\n\nEarn virtual coins with /economy daily, /economy work, /economy question, and /economy math.\n\n🛡️ **Staff:** /store-admin manages shop items and balances."
     },
     {
@@ -97,7 +97,7 @@ const CHANNEL_ALIASES = Object.freeze({
         "support-center", "ticket-panel", "ticket-support", "טיקטים", "תמיכה"],
     giveaways: ["giveaways", "giveaway", "הגרלות", "הגרלה"],
     drops: ["drops", "drop", "דרופים", "דרופ"],
-    shop: ["shop", "store", "economy-shop", "coin-shop", "coins",
+    shop: ["item-store", "shop", "store", "economy-shop", "coin-shop", "coins",
         "חנות", "חנות-מטבעות"],
     "daily-question": ["daily-question", "daily-quiz", "question-of-the-day",
         "שאלת-היום"],
