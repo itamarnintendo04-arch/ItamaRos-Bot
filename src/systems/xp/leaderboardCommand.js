@@ -42,7 +42,7 @@ async function execute(interaction) {
                 lines.length ? lines.join("\n") :
                     "No members have earned XP yet.",
                 "",
-                "Level 1 takes 200 XP. Every higher level costs 50 XP more."
+                "Starts at 50 XP per level; difficulty grows every 3 levels, then 2, then 1."
             ].join("\n"),
             allowedMentions: { parse: [] }
         });
