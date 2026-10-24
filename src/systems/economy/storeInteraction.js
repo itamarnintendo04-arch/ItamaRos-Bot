@@ -11,6 +11,7 @@ const {
     MessageFlags
 } = require("discord.js");
 const economy = require("./service");
+const { notifyItemUsed } = require("./useNotifications");
 const images = require("./itemImages");
 const {
     STORE_CHANNEL_ID,
@@ -232,8 +233,18 @@ async function useProduct(interaction, key) {
         );
     }
 
+    // Report every successful redemption to private staff audit
+    // and server owner, whether used through buttons or /store use.
+    await notifyItemUsed({
+        guild: interaction.guild,
+        user: interaction.user,
+        item,
+        action: item.type === "role" ? "Redeemed role" : "Used item"
+    });
+
     await interaction.editReply({
-        content: "✨ You used **" + clean(item.name) + "**!",
+        content: "✨ You used **" + clean(item.name) +
+            "**! A notification was sent to server staff.",
         allowedMentions: { parse: [] }
     });
 }
