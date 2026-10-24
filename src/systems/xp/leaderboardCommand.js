@@ -2,7 +2,7 @@
 
 const { SlashCommandBuilder } = require("discord.js");
 const { getDatabase } = require("../../../database");
-const { XP_PER_LEVEL } = require("./service");
+const { xpToLevel } = require("./service");
 
 const data = new SlashCommandBuilder()
     .setName("xp-leaderboard")
@@ -32,7 +32,7 @@ async function execute(interaction) {
         const lines = profiles.map((row, index) =>
             (index + 1) + ". <@" + row.userId + "> — **" +
             Number(row.xp).toLocaleString("en-US") + " XP** " +
-            "(Level " + Math.floor(row.xp / XP_PER_LEVEL) + ")"
+            "(Level " + xpToLevel(Number(row.xp)) + ")"
         );
 
         await interaction.editReply({
@@ -42,7 +42,7 @@ async function execute(interaction) {
                 lines.length ? lines.join("\n") :
                     "No members have earned XP yet.",
                 "",
-                "Each 200 XP = 1 level."
+                "Level 1 takes 200 XP. Every higher level costs 50 XP more."
             ].join("\n"),
             allowedMentions: { parse: [] }
         });
