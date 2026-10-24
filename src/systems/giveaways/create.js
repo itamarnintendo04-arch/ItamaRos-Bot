@@ -282,10 +282,10 @@ async function createGiveaway({
     }
 
     if (!Number.isSafeInteger(minLevel) ||
-        minLevel < 0 || minLevel > 1000) {
+        minLevel < 0) {
         return failure(
             "INVALID_MIN_LEVEL",
-            "The required level must be between 0 and 1000."
+            "The required level must be a nonnegative integer."
         );
     }
 
