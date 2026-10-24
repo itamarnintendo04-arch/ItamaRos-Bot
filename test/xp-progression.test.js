@@ -70,3 +70,25 @@ test("progress and remaining XP update on every level", () => {
     assert.equal(after.xpRequiredThisLevel, 100);
     assert.equal(after.xpToNextLevel, 100);
 });
+
+test("chat rewards grow after every eligible message", () => {
+    const { XP_PER_MESSAGE, MESSAGE_XP_GROWTH, messageReward } =
+        require("../src/systems/xp/service");
+    assert.equal(XP_PER_MESSAGE, 5);
+    assert.equal(MESSAGE_XP_GROWTH, 1);
+    assert.equal(messageReward(0), 5);
+    assert.equal(messageReward(1), 6);
+    assert.equal(messageReward(2), 7);
+    assert.equal(messageReward(20), 25);
+    assert.equal(messageReward(1500), 1505);
+});
+
+test("Kings unlock the five rank milestones from the same XP curve", () => {
+    const { RANKS, tierForXp } = require("../src/systems/kings/ranks");
+    const thresholds = [0, 50, 100, 150, 250];
+    assert.deepEqual(RANKS.map(rank => rank.requiredXp), thresholds);
+    for (let i = 0; i < thresholds.length; i++) {
+        assert.equal(tierForXp(thresholds[i]), i + 1);
+        if (i > 0) assert.equal(tierForXp(thresholds[i] - 1), i);
+    }
+});
