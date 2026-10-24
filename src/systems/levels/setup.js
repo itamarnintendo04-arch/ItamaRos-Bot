@@ -129,6 +129,16 @@ function tierOverwrites(guild, botId, tier, roles) {
             P.EmbedLinks, P.AttachFiles, P.ManageMessages
         ] }
     ];
+    for (const staffRole of guild.roles.cache.values()) {
+        if (staffRole.id !== guild.id &&
+            (staffRole.permissions.has(P.ManageGuild) ||
+             staffRole.permissions.has(P.Administrator))) {
+            base.push({
+                id: staffRole.id,
+                allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory]
+            });
+        }
+    }
     for (const [level, role] of roles) {
         if (level >= tier) {
             base.push({
@@ -177,7 +187,8 @@ function boostRules() {
         "",
         "👑 **KINGS RANKS (1–5)**",
         "• Active or permanently retained Kings members receive exactly one Kings Level role.",
-        "• Every 200 total XP unlocks the next Kings rank, up to Level 5.",
+        "• Every 200 activity XP unlocks the next Kings rank, up to Level 5.",
+        "• Rank bonus XP is excluded so milestones do not skip Kings levels.",
         "• Kings Level 5 can use all lower Kings categories and perks.",
         "• Administrators and staff with Manage Server can access every Kings category.",
         "",
@@ -272,6 +283,17 @@ async function applyOverwrites(guild, channel, tier, roles) {
 
         // A high-level rank can visit lower-level rank channels.
         const allowed = new Set([guild.id, bot.id]);
+        for (const staffRole of guild.roles.cache.values()) {
+            if (staffRole.id !== guild.id &&
+                (staffRole.permissions.has(P.ManageGuild) ||
+                 staffRole.permissions.has(P.Administrator))) {
+                allowed.add(staffRole.id);
+                await channel.permissionOverwrites.edit(staffRole.id, {
+                    ViewChannel: true, SendMessages: true,
+                    ReadMessageHistory: true
+                });
+            }
+        }
         for (const [level, role] of roles) {
             if (level >= tier) {
                 allowed.add(role.id);
