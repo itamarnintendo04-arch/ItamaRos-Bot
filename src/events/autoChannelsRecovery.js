@@ -3,6 +3,7 @@
 const { Events } = require("discord.js");
 const { refreshChannels } =
     require("../systems/setup/channels");
+const { ensureRankInfrastructure } = require("../systems/kings/ranks");
 
 let check = null;
 
@@ -18,9 +19,12 @@ module.exports = {
         if (check) clearTimeout(check);
         check = setTimeout(() => {
             check = null;
-            void refreshChannels(client).catch(error => {
+            void (async () => {
+                await refreshChannels(client);
+                await ensureRankInfrastructure(client, { refresh: true });
+            })().catch(error => {
                 console.error(
-                    "[Setup] Channel recreation failed:",
+                    "[Setup] Channel/Kings category recreation failed:",
                     error.message
                 );
             });
