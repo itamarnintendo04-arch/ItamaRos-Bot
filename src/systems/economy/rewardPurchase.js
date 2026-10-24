@@ -17,6 +17,24 @@ async function validateRewardRole(member, roleId) {
     if (!role || role.managed || role.id === member.guild.id) {
         fail("This reward role is no longer assignable.");
     }
+    const { PermissionFlagsBits } = require("discord.js");
+    const forbidden = [
+        PermissionFlagsBits.Administrator,
+        PermissionFlagsBits.ManageGuild,
+        PermissionFlagsBits.ManageRoles,
+        PermissionFlagsBits.ManageChannels,
+        PermissionFlagsBits.BanMembers,
+        PermissionFlagsBits.KickMembers,
+        PermissionFlagsBits.ModerateMembers,
+        PermissionFlagsBits.ManageWebhooks
+    ];
+    if (forbidden.some(p => role.permissions.has(p))) {
+        fail("This reward role has unsafe permissions.");
+    }
+    if (role.name === "Kings" ||
+        /^Level [1-3]$/.test(role.name)) {
+        fail("This special role cannot be sold.");
+    }
     if (member.roles.cache.has(roleId)) {
         fail("You already own this reward role.");
     }
@@ -27,7 +45,7 @@ async function validateRewardRole(member, roleId) {
     return role;
 }
 
-async function purchaseReward(guild, user, itemKey, member) {
+async function purchaseReward(guild, user, itemKey, member, checkoutId) {
     const guildId = guild.id;
     const userId = user.id;
     const item = await eco.getItem(guildId, itemKey);
@@ -51,6 +69,15 @@ async function purchaseReward(guild, user, itemKey, member) {
     const session = getMongoClient().startSession();
     try {
         const result = await session.withTransaction(async () => {
+            if (checkoutId) {
+                await getDatabase()
+                    .collection("economy_reward_checkout_claims")
+                    .insertOne({
+                        _id: guildId + ":" + userId + ":" + checkoutId,
+                        guildId, userId, itemKey,
+                        createdAt: new Date()
+                    }, { session });
+            }
             const current = await eco.catalog().findOne({
                 _id: item._id,
                 enabled: true,
@@ -83,7 +110,7 @@ async function purchaseReward(guild, user, itemKey, member) {
             }, {
                 $inc: { cash: net }
             }, { session });
-            if (!debitAndReward.modifiedCount) {
+            if (!debitAndReward.matchedCount) {
                 fail("Not enough wallet coins or balance limit reached.");
             }
 
@@ -147,13 +174,16 @@ async function purchaseReward(guild, user, itemKey, member) {
                 );
             }
         }
+        if (error.code === 11000 && checkoutId) {
+            fail("This checkout has already been completed.");
+        }
         throw error;
     } finally {
         await session.endSession();
     }
 }
 
-async function buyProduct(guild, user, key, quantity) {
+async function buyProduct(guild, user, key, quantity, checkoutId) {
     const item = await eco.getItem(guild.id, key);
     if (!item) fail("Product not found.");
     if (item.type !== "reward") {
@@ -163,7 +193,7 @@ async function buyProduct(guild, user, key, quantity) {
         fail("Instant reward products are purchased one at a time.");
     }
     const member = await guild.members.fetch(user.id);
-    return purchaseReward(guild, user, key, member);
+    return purchaseReward(guild, user, key, member, checkoutId);
 }
 
 function rewardSummary(item) {
