@@ -109,11 +109,11 @@ async function makePrivateKingsShop(guild, userId) {
             "",
             ...featured.map(item => "👑 **" + clean(item.name, 60) + "** • " +
                 format(item.price) + " " + symbol +
-                "\\nLevel " + (item.minKingsLevel || 0) + "+ • ID: " + item.key),
+                "\nLevel " + (item.minKingsLevel || 0) + "+ • ID: " + item.key),
             items.length > MAX_VISIBLE
-                ? "\\nUse /store list to view more Kings products."
+                ? "\nUse /store list to view more Kings products."
                 : ""
-        ].join("\\n").slice(0, 3850));
+        ].join("\n").slice(0, 3850));
 
     const buyable = featured.filter(item => item.stock === null || item.stock > 0);
     const rows = [];
