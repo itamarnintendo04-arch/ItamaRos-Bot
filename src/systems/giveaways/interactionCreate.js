@@ -19,6 +19,10 @@ const {
 
 const { handleGiveawayButtons } = require("./buttons");
 const { handleRejoinApproval } = require("./rejoin");
+const {
+    notifyGiveawayManagers,
+    createManagerButtons
+} = require("./adminNotifications");
 
 function parseDuration(value) {
     if (typeof value !== "string") return null;
@@ -183,7 +187,21 @@ async function handleGiveawayInteraction(interaction) {
                     "Save the ID to use /giveaway end,",
                     "/giveaway cancel or /giveaway-admin."
                 ].join("\n"),
-                allowedMentions: { parse: [] }
+                allowedMentions: { parse: [] },
+                components: createManagerButtons({
+                    ...result,
+                    _id: result.giveawayId
+                })
+            });
+
+            await notifyGiveawayManagers(
+                interaction,
+                result.giveawayId
+            ).catch(error => {
+                console.error(
+                    "[Giveaway Admin] Notification failed:",
+                    error
+                );
             });
 
             return true;

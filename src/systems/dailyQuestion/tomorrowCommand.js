@@ -124,7 +124,7 @@ async function execute(interaction) {
     await interaction.editReply({
         content: [
             `✅ **Tomorrow's quiz was saved for ${date}!**`,
-            `🧠 **Question:** ${question.replace(/@/g, "@\\u200b")}`,
+            `🧠 **Question:** ${question.replace(/@/g, "@\u200b")}`,
             "🔒 Correct answer saved privately.",
             "📅 Publishes at 07:00 (Israel time).",
             "🏆 Answer and winners announced at 21:00."

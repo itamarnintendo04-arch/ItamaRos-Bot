@@ -11,6 +11,10 @@ const {
     removeGiveawayParticipant
 } = require("./admin");
 
+const {
+    createManagerMessage
+} = require("./adminNotifications");
+
 const COLORS = Object.freeze({
     PRIMARY: 0x8B5CF6,
     SUCCESS: 0x22C55E,
@@ -28,6 +32,17 @@ const data = new SlashCommandBuilder()
         PermissionFlagsBits.ManageGuild
     )
 
+    .addSubcommand(subcommand =>
+        subcommand
+            .setName("info")
+            .setDescription("View a giveaway ID and management buttons")
+            .addStringOption(option =>
+                option
+                    .setName("giveaway_id")
+                    .setDescription("Giveaway ID")
+                    .setRequired(true)
+            )
+    )
     .addSubcommand(subcommand =>
         subcommand
             .setName("entrants")
@@ -418,6 +433,25 @@ async function handleRemove(interaction, giveawayId) {
     );
 }
 
+async function handleInfo(interaction, giveawayId) {
+    const result = await getGiveawayEntrants(
+        giveawayId,
+        { guildId: interaction.guildId }
+    );
+
+    if (!result.success) {
+        await showError(
+            interaction,
+            getFailureMessage(result.reason)
+        );
+        return;
+    }
+
+    await interaction.editReply(
+        createManagerMessage(result.giveaway)
+    );
+}
+
 async function execute(interaction) {
     if (
         !interaction.isChatInputCommand() ||
@@ -454,6 +488,13 @@ async function execute(interaction) {
         );
 
         switch (subcommand) {
+            case "info":
+                await handleInfo(
+                    interaction,
+                    giveawayId
+                );
+                break;
+
             case "entrants":
                 await handleEntrants(
                     interaction,

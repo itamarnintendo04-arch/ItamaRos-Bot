@@ -118,6 +118,12 @@ const {
 );
 
 const {
+  handleCopyGiveawayId
+} = require(
+  "./systems/giveaways/adminNotifications"
+);
+
+const {
   DROP_SETTINGS
 } = require(
   "./systems/drops/config"
@@ -433,6 +439,15 @@ client.on(
       }
 
       if (!interaction.isButton()) {
+        return;
+      }
+
+      // ----------------------------------
+      // PRIVATE GIVEAWAY MANAGEMENT BUTTON
+      // ----------------------------------
+
+      if (customId.startsWith("ga:copy:")) {
+        await handleCopyGiveawayId(interaction);
         return;
       }
 
