@@ -1,39 +1,46 @@
-# YouTube updates for ItamaRos Bot
+# ItamaRos Bot: YouTube notifications via Render
 
-Managers can use /youtube setup and select the text/announcement
-channel where new YouTube uploads should appear. Optionally set
-youtube_channel to a YouTube @handle, UC... channel ID, or channel URL;
-the default source is @ItamaRos.
+The bot reads its configuration from Render; no Discord setup
+command is needed.
 
-Other commands: /youtube status, /youtube check and /youtube disable.
+Required variables:
+- YOUTUBE_CHANNEL_ID: the YouTube UC... channel ID, not the @handle.
+- YOUTUBE_UPDATES_CHANNEL_ID: destination Discord channel ID.
+- YOUTUBE_API_KEY: YouTube Data API v3 key. Put in Render secrets.
+- GUILD_ID: the Discord server ID, already in Render.
 
-Bot permissions: View Channel and Send Messages for the selected
-Discord channel.
+Optional YOUTUBE_CHECK_INTERVAL_MINUTES: 3 (range: 2 to 30).
 
-For basic tracking, the bot uses YouTube's public Atom feed.
-Optional Render environment variables:
+To find the YouTube Channel ID, sign into the channel owner account:
+https://www.youtube.com/account_advanced
+and copy "Channel ID" (UC...).
 
-- YOUTUBE_API_KEY: improves livestream and upcoming event detection.
-  Set this securely in Render, NOT in GitHub.
-- YOUTUBE_CHECK_INTERVAL_MINUTES: default 3, minimum 2, maximum 30.
-- YOUTUBE_CHANNEL_ID or YOUTUBE_CHANNEL_HANDLE: overrides default @ItamaRos.
+In Discord Developer Mode, long-press/right-click the updates channel
+and select Copy Channel ID.
 
-The output format is:
+The bot must have View Channel, Send Messages and Mention @everyone
+permissions in that destination channel.
 
-🎬 New Short Uploaded!
+On deployment, it reads Render variables, checks permissions, and
+seeds old uploads into MongoDB to avoid posting a backlog.
+On subsequent restarts it resumes the persisted configuration.
+
+Notifications are written as follows, each preceded by @everyone:
+
+New Short Uploaded!
 https://www.youtube.com/shorts/VIDEO_ID
 
-🎥 New Video Uploaded!
+New Video Uploaded!
 https://www.youtube.com/watch?v=VIDEO_ID
 
-🔴 New Live Started!
+New Live Started!
 https://www.youtube.com/watch?v=VIDEO_ID
 
-Existing uploads are seeded into MongoDB when first configured to avoid
-spamming old uploads. New video records and subscription configuration
-are stored in youtube_notifications and youtube_subscriptions.
+The YouTube public Atom feed is polled approximately every 3 minutes.
+YouTube may not identify every Short or reveal every live transition
+in its feed, so categorization and delivery times are best-effort.
+An API key improves livestream classification.
 
-YouTube's public feed does not always identify Shorts or exactly when a
-livestream begins. Classification is best effort without an API key,
-especially if the creator doesn't use #Shorts. There will be a delay
-due to YouTube publication latency plus the chosen polling interval.
+Subscriptions are stored in MongoDB collection youtube_subscriptions;
+previously announced IDs in youtube_notifications. The legacy /youtube
+command is retired and will be unregistered on bot startup.

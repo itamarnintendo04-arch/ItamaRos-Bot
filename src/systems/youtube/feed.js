@@ -224,8 +224,8 @@ function announcement(video, kind) {
             : "🎥 **New Video Uploaded!**";
 
     return {
-        content: heading + "\n" + url,
-        allowedMentions: { parse: [] }
+        content: "@everyone\n\n" + heading + "\n" + url,
+        allowedMentions: { parse: ["everyone"] }
     };
 }
 

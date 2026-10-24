@@ -7,6 +7,20 @@ const feed = require("./feed");
 const CONFIG_COLLECTION = "youtube_subscriptions";
 const SEEN_COLLECTION = "youtube_notifications";
 const MAX_NEW_UPLOAD_AGE_MS = 48 * 60 * 60 * 1000;
+const YOUTUBE_ID = /^UC[A-Za-z0-9_-]{22}$/;
+const DISCORD_ID = /^\d{17,20}$/;
+
+function renderConfig() {
+    return {
+        guildId: (process.env.GUILD_ID || "").trim(),
+        youtubeChannelId: (process.env.YOUTUBE_CHANNEL_ID || "").trim(),
+        discordChannelId: (
+            process.env.YOUTUBE_UPDATES_CHANNEL_ID ||
+            process.env.DISCORD_UPDATES_CHANNEL_ID ||
+            ""
+        ).trim()
+    };
+}
 
 let scheduler = null;
 let running = false;
@@ -133,10 +147,11 @@ async function updatesChannel(client, config) {
 
     if (
         !permission?.has(PermissionFlagsBits.ViewChannel) ||
-        !permission?.has(PermissionFlagsBits.SendMessages)
+        !permission?.has(PermissionFlagsBits.SendMessages) ||
+        !permission?.has(PermissionFlagsBits.MentionEveryone)
     ) {
         throw new Error(
-            "Missing View Channel or Send Messages permission."
+            "Missing View Channel, Send Messages or Mention @everyone permission."
         );
     }
 
@@ -294,15 +309,71 @@ async function pollGuild(client, config) {
     return { checked: uploads.length, sent };
 }
 
+async function configureFromRender(client) {
+    const values = renderConfig();
+
+    if (!values.youtubeChannelId || !values.discordChannelId) {
+        console.warn(
+            "[YouTube] Not enabled: set YOUTUBE_CHANNEL_ID and " +
+            "YOUTUBE_UPDATES_CHANNEL_ID in Render."
+        );
+        return false;
+    }
+
+    if (!DISCORD_ID.test(values.guildId) ||
+        !YOUTUBE_ID.test(values.youtubeChannelId) ||
+        !DISCORD_ID.test(values.discordChannelId)) {
+        throw new Error(
+            "Invalid GUILD_ID, YOUTUBE_CHANNEL_ID or " +
+            "YOUTUBE_UPDATES_CHANNEL_ID."
+        );
+    }
+
+    await updatesChannel(client, values);
+
+    const current = await getConfig(values.guildId);
+    if (
+        current?.enabled &&
+        current.channelId === values.youtubeChannelId &&
+        current.discordChannelId === values.discordChannelId
+    ) {
+        console.log(
+            "[YouTube] Resuming existing notification subscription."
+        );
+        return true;
+    }
+
+    const configured = await setup({
+        guildId: values.guildId,
+        youtubeSource: values.youtubeChannelId,
+        discordChannelId: values.discordChannelId
+    });
+
+    console.log(
+        "[YouTube] Configured from Render. Previous uploads saved: " +
+        configured.seededCount
+    );
+    return true;
+}
+
 async function pollAll(client) {
     if (running) return;
     running = true;
 
     try {
-        const configs = await settings()
-            .find({ enabled: true })
-            .limit(100)
-            .toArray();
+        const values = renderConfig();
+        if (!DISCORD_ID.test(values.guildId) ||
+            !YOUTUBE_ID.test(values.youtubeChannelId) ||
+            !DISCORD_ID.test(values.discordChannelId)) {
+            return;
+        }
+
+        const config = await getConfig(values.guildId);
+        const configs = (
+            config?.enabled &&
+            config.channelId === values.youtubeChannelId &&
+            config.discordChannelId === values.discordChannelId
+        ) ? [config] : [];
 
         for (const config of configs) {
             try {
@@ -323,8 +394,12 @@ async function pollAll(client) {
 function start(client) {
     if (scheduler) return;
 
-    void pollAll(client).catch(error => {
-        console.error("[YouTube] Initial check error:", error);
+    void (async () => {
+        if (await configureFromRender(client)) {
+            await pollAll(client);
+        }
+    })().catch(error => {
+        console.error("[YouTube] Startup configuration failed:", error);
     });
 
     scheduler = setInterval(() => {
@@ -348,6 +423,7 @@ module.exports = {
     getConfig,
     setup,
     disable,
+    configureFromRender,
     pollGuild,
     pollAll,
     updatesChannel,

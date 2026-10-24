@@ -73,8 +73,6 @@ const tomorrowQuizCommand = require(
   "./systems/dailyQuestion/tomorrowCommand"
 );
 
-const youtubeCommand = require("./systems/youtube/command");
-
 // ==========================================
 // IMPORT INTERACTION HANDLERS
 // ==========================================
@@ -159,8 +157,7 @@ const commandModules = [
   giveawayTicketCommand,
   levelCommand,
   xpCommand,
-  tomorrowQuizCommand,
-  youtubeCommand
+  tomorrowQuizCommand
 ];
 
 for (const command of commandModules) {
@@ -328,6 +325,31 @@ async function registerCommands() {
   console.log(
     "[Commands] Registering all commands..."
   );
+
+  // Retire the previous slash command: YouTube now uses
+  // Render environment variables, not /youtube setup.
+  try {
+    const existing = await rest.get(route);
+    const legacy = Array.isArray(existing)
+      ? existing.find(item => item.name === "youtube")
+      : null;
+
+    if (legacy) {
+      await rest.delete(
+        Routes.applicationGuildCommand(
+          config.CLIENT_ID,
+          config.GUILD_ID,
+          legacy.id
+        )
+      );
+      console.log("[Commands] Removed retired /youtube command.");
+    }
+  } catch (error) {
+    console.warn(
+      "[Commands] Could not remove retired /youtube:",
+      error.message
+    );
+  }
 
   for (const command of client.commands.values()) {
     const data = command.data.toJSON();
