@@ -255,10 +255,9 @@ async function handleStoreInteraction(interaction) {
 
     try {
         if (!interaction.inGuild() ||
-            interaction.guildId !== process.env.GUILD_ID ||
-            interaction.channelId !== STORE_CHANNEL_ID) {
+            interaction.guildId !== process.env.GUILD_ID) {
             await interaction.reply(ephemeral(
-                "❌ This shop is only available in the official item-store."
+                "❌ This shop is only available in the ItamaRos server."
             ));
             return true;
         }
