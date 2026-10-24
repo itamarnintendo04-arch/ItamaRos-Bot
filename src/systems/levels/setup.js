@@ -176,6 +176,12 @@ function boostRules() {
         "• **Coins and XP already earned are NEVER taken away because a boost stopped.**",
         "",
         "⭐ **ACTIVITY RANKS**",
+        "• XP levels have no fixed maximum.",
+        "• Levels 1–15: XP requirements increase every 3 levels.",
+        "• Levels 16–30: requirements increase every 2 levels.",
+        "• From Level 31: requirements increase after every level.",
+        "• Qualified chat messages earn increasing XP: 5, then 6, 7, etc.",
+        "• Chat XP has a 60-second cooldown and repeated-text checks.",
         "• **Level 1** — " + totalXpForLevel(1) +
             " activity XP → Level 1 role, 500 bonus coins and XP.",
         "• **Level 2** — " + totalXpForLevel(2) +
