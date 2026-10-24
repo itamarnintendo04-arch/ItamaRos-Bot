@@ -366,7 +366,7 @@ function makeEmbed(title, description, color) {
         .setTimestamp();
 }
 
-function winnerEmbed(userId, prize, managerId) {
+function winnerEmbed(userId, prize, managerId, botId) {
     return new EmbedBuilder()
         .setColor(SETTINGS.COLOR)
         .setTitle("🏆 GIVEAWAY PRIZE TICKET")
@@ -377,7 +377,11 @@ function winnerEmbed(userId, prize, managerId) {
             "",
             "Our staff will assist you with your prize.",
             "",
-            "**Please wait for a staff member.**"
+            "**Please wait for a staff member.**",
+            "",
+            "🤖 **Need AI help?** Mention <@" + botId + "> here.",
+            "The AI only helps with the ItamaRos server",
+            "and this giveaway ticket's subject."
         ].join("\n"))
         .addFields(
             {
@@ -659,7 +663,8 @@ async function execute(interaction) {
                     winnerEmbed(
                         target.id,
                         prize,
-                        interaction.user.id
+                        interaction.user.id,
+                        interaction.client.user.id
                     )
                 ],
                 components: [closeButton()],

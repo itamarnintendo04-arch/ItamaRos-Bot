@@ -212,7 +212,8 @@ async function buildPermissionOverwrites(
 function buildWinnerEmbed(
     giveaway,
     winnerId,
-    sessionId
+    sessionId,
+    botId
 ) {
     const link = getGiveawayLink(giveaway);
 
@@ -223,7 +224,12 @@ function buildWinnerEmbed(
         "",
         "Our staff will help you claim your prize.",
         "",
-        "Please wait for a staff member to assist you."
+        "Please wait for a staff member to assist you.",
+        "",
+        "🤖 **Need AI support?** Mention <@" + botId + "> here.",
+        "AI only helps with this ItamaRos server and",
+        "questions relevant to this giveaway prize ticket.",
+        "The AI can use this ticket and staff replies."
     ];
 
     if (link) {
@@ -647,7 +653,8 @@ async function createGiveawayWinnerTicket(
             const embed = buildWinnerEmbed(
                 giveaway,
                 winnerId,
-                sessionId
+                sessionId,
+                client.user.id
             );
 
             await channel.send({

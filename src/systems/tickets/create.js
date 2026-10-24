@@ -361,7 +361,7 @@ async function findRecoverableChannel(guild, topic) {
 // WELCOME MESSAGE
 // ================================================
 
-function buildWelcomeEmbed(type, userId, answers, sessionId) {
+function buildWelcomeEmbed(type, userId, answers, sessionId, botId) {
     const lines = [
         `Welcome <@${userId}>!`,
         "",
@@ -393,8 +393,11 @@ function buildWelcomeEmbed(type, userId, answers, sessionId) {
         "",
         "A staff member will assist you shortly.",
         "",
-        "🤖 If mentioned, ItamaRos AI can use this form and",
-        "recent messages in this ticket (including staff messages).",
+        "### 🤖 AI Support",
+        "Need help? **Mention <@" + botId + "> in this ticket.**",
+        "**AI support is ONLY for the ItamaRos server and this ticket category.**",
+        "The AI can read submitted form answers and",
+        "recent messages here, including staff replies.",
         "Relevant context is sent to the configured AI provider.",
         "",
         "🔒 Only authorized staff can close this ticket."
@@ -551,7 +554,8 @@ async function createTicket(interaction, ticketData) {
             ticketType,
             user.id,
             answers,
-            sessionId
+            sessionId,
+            interaction.client.user.id
         );
 
         let welcomeMessageSent = false;
