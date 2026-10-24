@@ -18,9 +18,7 @@ const path = require("node:path");
 const http = require("node:http");
 
 const config = require("../config");
-const {
-  connectDatabase
-} = require("../database");
+const { connectDatabase } = require("../database");
 
 // ==========================================
 // ITAMAROS BOT - MAIN APPLICATION
@@ -48,18 +46,50 @@ const warnCommand = require(
   "./systems/moderation/warnCommand"
 );
 
-client.commands.set(
-  ticketCommand.data.name,
-  ticketCommand
+const giveawayCommand = require(
+  "./systems/giveaways/command"
 );
 
-client.commands.set(
-  warnCommand.data.name,
-  warnCommand
+const giveawayAdminCommand = require(
+  "./systems/giveaways/adminCommand"
+);
+
+const activeGiveawaysCommand = require(
+  "./systems/giveaways/activeGiveaways"
+);
+
+const dropCommand = require(
+  "./systems/drops/command"
+);
+
+const giveawayTicketCommand = require(
+  "./systems/tickets/giveawayCommand"
 );
 
 // ==========================================
-// IMPORT NEW SYSTEMS
+// IMPORT INTERACTION HANDLERS
+// ==========================================
+
+const {
+  handleGiveawayInteraction
+} = require(
+  "./systems/giveaways/interactionCreate"
+);
+
+const {
+  handleDropInteraction
+} = require(
+  "./systems/drops/interactionCreate"
+);
+
+const {
+  handleQuizInteraction
+} = require(
+  "./systems/dailyQuestion/quiz"
+);
+
+// ==========================================
+// IMPORT OTHER SYSTEMS
 // ==========================================
 
 const {
@@ -69,10 +99,77 @@ const {
 );
 
 const {
-  handleQuizInteraction
+  startGiveawayScheduler
 } = require(
-  "./systems/dailyQuestion/quiz"
+  "./systems/giveaways/scheduler"
 );
+
+const {
+  GIVEAWAY_SETTINGS
+} = require(
+  "./systems/giveaways/config"
+);
+
+const {
+  DROP_SETTINGS
+} = require(
+  "./systems/drops/config"
+);
+
+// ==========================================
+// REGISTER LOCAL COMMAND HANDLERS
+// ==========================================
+
+// Some older command modules export only
+// their command data. Their actual execution
+// logic is located in interactionCreate.js.
+
+const commandModules = [
+  ticketCommand,
+  warnCommand,
+
+  {
+    data: giveawayCommand.data,
+    execute: handleGiveawayInteraction
+  },
+
+  giveawayAdminCommand,
+  activeGiveawaysCommand,
+
+  {
+    data: dropCommand.data,
+    execute: handleDropInteraction
+  },
+
+  giveawayTicketCommand
+];
+
+for (const command of commandModules) {
+  if (
+    !command?.data?.name ||
+    typeof command.data.toJSON !== "function" ||
+    typeof command.execute !== "function"
+  ) {
+    throw new Error(
+      "Invalid command configuration."
+    );
+  }
+
+  if (client.commands.has(command.data.name)) {
+    throw new Error(
+      `Duplicate command: ${command.data.name}`
+    );
+  }
+
+  client.commands.set(
+    command.data.name,
+    command
+  );
+
+  console.log(
+    `[Commands] Loaded /${command.data.name}`
+  );
+}
 
 // ==========================================
 // RENDER HTTP SERVER
@@ -96,11 +193,10 @@ const server = http.createServer((req, res) => {
         >
         <title>ItamaRos Bot</title>
       </head>
-
       <body>
         <h1>💜 ItamaRos Bot</h1>
         <p>Discord Bot Web Service</p>
-        <p>Server is running.</p>
+        <p>Service is running.</p>
       </body>
     </html>
   `);
@@ -113,15 +209,11 @@ server.listen(PORT, () => {
 });
 
 // ==========================================
-// LOAD EXISTING EVENTS
+// LOAD EXISTING EVENT FILES
 // ==========================================
 
-// Keep the original event loader.
-// This includes:
-// - Ticket interactions
-// - Ticket AI mentions
-// - Daily Quiz scheduler
-// - Channel deletion handling
+// Keeps the existing ticket event handlers,
+// ticket AI, daily quiz and channel events.
 
 const eventsPath = path.join(
   __dirname,
@@ -139,7 +231,7 @@ if (fs.existsSync(eventsPath)) {
     );
 
     if (
-      !event.name ||
+      !event?.name ||
       typeof event.execute !== "function"
     ) {
       console.warn(
@@ -178,8 +270,8 @@ if (fs.existsSync(eventsPath)) {
 // MULTILINGUAL WORD FILTER
 // ==========================================
 
-// Uses fixed words, NOT Gemini AI.
-// Runs alongside the existing ticket AI.
+// Fixed words only.
+// Gemini stays in ticket support.
 
 client.on(
   Events.MessageCreate,
@@ -188,99 +280,21 @@ client.on(
     if (message.author.bot) return;
     if (message.webhookId) return;
 
-    handleWordFilter(message)
-      .catch(error => {
-        console.error(
-          "[Word Filter] Error:",
-          error
-        );
-      });
-  }
-);
-
-// ==========================================
-// DAILY QUIZ INTERACTIONS
-// ==========================================
-
-// Handles:
-// - Answer Privately button
-// - Answer submission form
-// - Set Tomorrow's Question button
-// - Owner question setup form
-
-client.on(
-  Events.InteractionCreate,
-  async interaction => {
-    if (
-      !interaction.isButton() &&
-      !interaction.isModalSubmit()
-    ) {
-      return;
-    }
-
-    if (
-      !interaction.customId?.startsWith(
-        "dq:"
-      )
-    ) {
-      return;
-    }
-
-    try {
-      await handleQuizInteraction(
-        interaction
-      );
-    } catch (error) {
+    handleWordFilter(message).catch(error => {
       console.error(
-        "[Daily Quiz] Interaction error:",
+        "[Word Filter] Error:",
         error
       );
-
-      const payload = {
-        content:
-          "❌ Something went wrong. " +
-          "Please try again.",
-        allowedMentions: {
-          parse: []
-        }
-      };
-
-      if (interaction.inGuild()) {
-        payload.flags =
-          MessageFlags.Ephemeral;
-      }
-
-      try {
-        if (
-          interaction.replied ||
-          interaction.deferred
-        ) {
-          await interaction.followUp(
-            payload
-          );
-        } else {
-          await interaction.reply(
-            payload
-          );
-        }
-      } catch (replyError) {
-        console.error(
-          "[Daily Quiz] Reply failed:",
-          replyError
-        );
-      }
-    }
+    });
   }
 );
 
 // ==========================================
-// REGISTER SLASH COMMANDS
+// REGISTER DISCORD SLASH COMMANDS
 // ==========================================
 
-// Register commands individually.
-// This preserves other existing Discord
-// application commands instead of deleting
-// them with a bulk overwrite.
+// Individual upserts avoid deleting unrelated
+// commands already registered for the guild.
 
 async function registerCommands() {
   const rest = new REST({
@@ -293,91 +307,176 @@ async function registerCommands() {
   );
 
   console.log(
-    "[Commands] Registering slash commands..."
+    "[Commands] Registering all commands..."
   );
 
   for (const command of client.commands.values()) {
-    const commandData =
-      command.data.toJSON();
+    const data = command.data.toJSON();
 
-    // Guild commands are already restricted
-    // to the specified server.
-    delete commandData.contexts;
-    delete commandData.integration_types;
+    // These are guild commands.
+    delete data.contexts;
+    delete data.integration_types;
 
     await rest.post(route, {
-      body: commandData
+      body: data
     });
 
     console.log(
-      `[Commands] Registered /${commandData.name}`
+      `[Commands] Registered /${data.name}`
     );
   }
 
   console.log(
-    "[Commands] Registration complete!"
+    `[Commands] ${client.commands.size} commands registered.`
   );
 }
 
 // ==========================================
-// EXECUTE SLASH COMMANDS
+// SHARED INTERACTION ERROR RESPONSE
+// ==========================================
+
+async function replyWithError(interaction) {
+  const response = {
+    content:
+      "❌ Something went wrong. Please try again.",
+    allowedMentions: {
+      parse: []
+    }
+  };
+
+  try {
+    if (interaction.deferred) {
+      await interaction.editReply(response);
+    } else if (interaction.replied) {
+      await interaction.followUp({
+        ...response,
+        ...(interaction.inGuild()
+          ? { flags: MessageFlags.Ephemeral }
+          : {})
+      });
+    } else {
+      await interaction.reply({
+        ...response,
+        ...(interaction.inGuild()
+          ? { flags: MessageFlags.Ephemeral }
+          : {})
+      });
+    }
+  } catch (error) {
+    console.error(
+      "[Interactions] Error reply failed:",
+      error.message
+    );
+  }
+}
+
+// ==========================================
+// HANDLE COMMANDS AND BUTTONS
 // ==========================================
 
 client.on(
   Events.InteractionCreate,
   async interaction => {
-    if (
-      !interaction.isChatInputCommand()
-    ) {
-      return;
-    }
-
-    const command = client.commands.get(
-      interaction.commandName
-    );
-
-    if (!command) return;
-
     try {
-      await command.execute(
-        interaction,
-        client
-      );
+      // ----------------------------------
+      // SLASH COMMANDS
+      // ----------------------------------
+
+      if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(
+          interaction.commandName
+        );
+
+        if (!command) return;
+
+        await command.execute(
+          interaction,
+          client
+        );
+
+        return;
+      }
+
+      // ----------------------------------
+      // BUTTONS AND MODALS
+      // ----------------------------------
+
+      if (
+        !interaction.isButton() &&
+        !interaction.isModalSubmit()
+      ) {
+        return;
+      }
+
+      const customId = interaction.customId;
+
+      // ----------------------------------
+      // DAILY QUIZ
+      // ----------------------------------
+
+      if (customId.startsWith("dq:")) {
+        await handleQuizInteraction(
+          interaction
+        );
+
+        return;
+      }
+
+      if (!interaction.isButton()) {
+        return;
+      }
+
+      // ----------------------------------
+      // GIVEAWAY BUTTONS
+      // ----------------------------------
+
+      const giveawayButton =
+        customId.startsWith(
+          `${GIVEAWAY_SETTINGS.JOIN_BUTTON_ID}:`
+        ) ||
+        customId.startsWith(
+          `${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:`
+        ) ||
+        customId.startsWith(
+          "giveaway_rejoin_"
+        ) ||
+        customId.startsWith(
+          "rejoin_"
+        );
+
+      if (giveawayButton) {
+        await handleGiveawayInteraction(
+          interaction
+        );
+
+        return;
+      }
+
+      // ----------------------------------
+      // DROP BUTTONS
+      // ----------------------------------
+
+      if (
+        customId.startsWith(
+          `${DROP_SETTINGS.CLAIM_BUTTON_ID}:`
+        )
+      ) {
+        await handleDropInteraction(
+          interaction
+        );
+
+        return;
+      }
+
+      // Ticket buttons and forms are already
+      // handled by src/events/interactionCreate.js.
     } catch (error) {
       console.error(
-        `[Commands] /${interaction.commandName} failed:`,
+        "[Interactions] Handler failed:",
         error
       );
 
-      const response = {
-        content:
-          "❌ An error occurred while " +
-          "executing this command.",
-        flags: MessageFlags.Ephemeral,
-        allowedMentions: {
-          parse: []
-        }
-      };
-
-      try {
-        if (
-          interaction.deferred ||
-          interaction.replied
-        ) {
-          await interaction.followUp(
-            response
-          );
-        } else {
-          await interaction.reply(
-            response
-          );
-        }
-      } catch (replyError) {
-        console.error(
-          "[Commands] Error response failed:",
-          replyError
-        );
-      }
+      await replyWithError(interaction);
     }
   }
 );
@@ -390,7 +489,7 @@ client.once(
   Events.ClientReady,
   readyClient => {
     console.log(
-      "================================"
+      "===================================="
     );
 
     console.log(
@@ -398,27 +497,43 @@ client.once(
     );
 
     console.log(
-      "[ItamaRos] Ticket System enabled"
+      `[Commands] ${client.commands.size} commands loaded`
     );
 
     console.log(
-      "[ItamaRos] Ticket AI enabled"
+      "[Systems] Ticket support enabled"
     );
 
     console.log(
-      "[ItamaRos] Word Filter enabled"
+      "[Systems] Ticket AI event loaded"
     );
 
     console.log(
-      "[ItamaRos] /warn command enabled"
+      "[Systems] Word Filter enabled"
     );
 
     console.log(
-      "[ItamaRos] Daily Quiz enabled"
+      "[Systems] Daily Quiz event loaded"
     );
 
+    // Automatically finish expired giveaways.
+    try {
+      startGiveawayScheduler(
+        readyClient
+      );
+
+      console.log(
+        "[Systems] Giveaway Scheduler started"
+      );
+    } catch (error) {
+      console.error(
+        "[Giveaways] Scheduler startup failed:",
+        error
+      );
+    }
+
     console.log(
-      "================================"
+      "===================================="
     );
   }
 );
@@ -455,7 +570,6 @@ async function start() {
     );
 
     process.exitCode = 1;
-
     server.close();
   }
 }
