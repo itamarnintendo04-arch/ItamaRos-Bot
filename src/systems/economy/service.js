@@ -341,6 +341,9 @@ async function buy(guildId, userId, itemKey, quantity) {
             _id: itemId(guildId, itemKey), enabled: true
         }, { session });
         if (!item) fail("Item is not on sale.");
+        if (item.type === "reward") {
+            fail("Instant rewards must use the verified reward checkout.");
+        }
         if (item.stock !== null && item.stock < qty) fail("Not enough stock.");
         const cost = item.price * qty;
         if (!Number.isSafeInteger(cost) || cost > MAX_BALANCE) {
