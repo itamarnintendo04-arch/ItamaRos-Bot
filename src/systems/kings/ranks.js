@@ -2,20 +2,20 @@
 
 const { ChannelType, PermissionFlagsBits: P } = require("discord.js");
 const { getDatabase } = require("../../../database");
-const { XP_PER_LEVEL } = require("../xp/service");
+const { xpToLevel, totalXpForLevel } = require("../xp/progression");
 
 // Kings ranks are separate from general XP reward roles.
-// Every 200 activity XP unlocks another Kings tier, up to tier five.
+// Kings tiers follow the first four progressively harder activity-XP level thresholds.
 const RANKS = Object.freeze([
     { tier: 1, requiredXp: 0, color: 0xB6A1FF, category: "👑 KINGS",
       channels: ["lounge", "news", "help"] },
-    { tier: 2, requiredXp: 200, color: 0x84D7FF, category: "👑 KINGS • LEVEL 2",
+    { tier: 2, requiredXp: totalXpForLevel(1), color: 0x84D7FF, category: "👑 KINGS • LEVEL 2",
       channels: ["strategy-lv2", "events-lv2", "giveaways-lv2"] },
-    { tier: 3, requiredXp: 400, color: 0x71E7C0, category: "👑 KINGS • LEVEL 3",
+    { tier: 3, requiredXp: totalXpForLevel(2), color: 0x71E7C0, category: "👑 KINGS • LEVEL 3",
       channels: ["drops-lv3", "edits-lv3", "requests-lv3"] },
-    { tier: 4, requiredXp: 600, color: 0xFFD580, category: "👑 KINGS • LEVEL 4",
+    { tier: 4, requiredXp: totalXpForLevel(3), color: 0xFFD580, category: "👑 KINGS • LEVEL 4",
       channels: ["shop-lv4", "royal-events-lv4", "rewards-lv4"] },
-    { tier: 5, requiredXp: 800, color: 0xFF9FD0, category: "👑 KINGS • LEVEL 5",
+    { tier: 5, requiredXp: totalXpForLevel(4), color: 0xFF9FD0, category: "👑 KINGS • LEVEL 5",
       channels: ["royal-lounge-lv5", "premium-events-lv5", "vip-perks-lv5"] }
 ]);
 const MAX_RANK = RANKS.length;
@@ -26,7 +26,7 @@ let infrastructurePromise = null;
 const synchronizing = new Map();
 
 function tierForXp(xp) {
-    return Math.min(MAX_RANK, Math.max(1, 1 + Math.floor(Math.max(0, xp) / XP_PER_LEVEL)));
+    return Math.min(MAX_RANK, Math.max(1, 1 + xpToLevel(xp)));
 }
 
 function staffRole(role, guild) {
