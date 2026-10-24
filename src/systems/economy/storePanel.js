@@ -41,20 +41,22 @@ function storeEmbed(items, symbol) {
     const summary = featured.map(item => {
         const label = clean(item.name);
         const soldOut = item.stock === 0;
-        return (item.hasImage ? "🖼️ " : "📦 ") +
+        return (item.isShopPack ? "💎 " : item.hasImage ? "🖼️ " : "🎁 ") +
             "**" + label + "**  •  " +
             num(item.price) + " " + clean(symbol, 12) +
+            (item.isShopPack ? "  •  SHOP PACK" : "") +
             (soldOut ? "  •  SOLD OUT" : "");
     });
 
     return new EmbedBuilder()
-        .setColor(0x7C4DFF)
-        .setTitle("🛍️ ItamaRos | Item Store")
+        .setColor(0x9B5CFF)
+        .setTitle("✦ ITAMAROS  •  PREMIUM SHOP")
         .setDescription([
-            "**Welcome to the official ItamaRos shop!**",
+            "💜 **WELCOME TO THE ITAMAROS STORE**",
+            "━━━━━━━━━━━━━━━━━━━━",
             "Buy digital items, collect rewards and manage your inventory.",
             "",
-            "**FEATURED PRODUCTS**",
+            "✦ **FEATURED DROPS & SHOP PACKS**",
             featured.length
                 ? summary.join("\n\n")
                 : "🌟 New products will appear here soon!",
