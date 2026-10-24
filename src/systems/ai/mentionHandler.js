@@ -2,6 +2,7 @@
 "use strict";
 
 const { getDatabase } = require("../../../database");
+const { buildTicketContext } = require("./ticketContext");
 
 // ================================================
 // ITAMAROS BOT • AI MENTION HANDLER 2.0
@@ -403,10 +404,7 @@ function createAiMentionHandler(options = {}) {
             } else {
                 response = await generateReply({
                     question,
-                    ticket: {
-                        type: ticket.type,
-                        typeLabel: ticket.typeLabel
-                    }
+                    ticket: await buildTicketContext(message, ticket)
                 });
             }
 

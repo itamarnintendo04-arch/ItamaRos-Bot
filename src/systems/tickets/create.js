@@ -393,6 +393,10 @@ function buildWelcomeEmbed(type, userId, answers, sessionId) {
         "",
         "A staff member will assist you shortly.",
         "",
+        "🤖 If mentioned, ItamaRos AI can use this form and",
+        "recent messages in this ticket (including staff messages).",
+        "Relevant context is sent to the configured AI provider.",
+        "",
         "🔒 Only authorized staff can close this ticket."
     );
 
