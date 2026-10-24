@@ -30,6 +30,10 @@ data.addSubcommand(s => s.setName("quiz").setDescription("Play trivia to earn co
    {name:"1",value:"1"},{name:"2",value:"2"},{name:"3",value:"3"}
   )));
 data.addSubcommand(s => s.setName("question").setDescription("View today's quiz question"));
+data.addSubcommand(s => s.setName("math").setDescription("View a math challenge for coins"));
+data.addSubcommand(s => s.setName("solve").setDescription("Answer your math challenge")
+ .addIntegerOption(o => o.setName("answer").setDescription("Numeric answer")
+  .setMinValue(0).setMaxValue(1000).setRequired(true)));
 
 const fmt = (n, symbol) => Number(n || 0).toLocaleString("en-US") + " " + symbol;
 
@@ -77,6 +81,17 @@ async function execute(interaction) {
    answer = result.isCorrect
     ? "🎉 Correct! You earned **"+fmt(result.reward,symbol)+"**!"
     : "Not quite! The right answer was **"+result.correct+"**. Try again in 10 minutes.";
+  } else if (action === "math") {
+   answer = "🧮 **Math Challenge**\n\n"+
+    eco.getMathQuestion(user.id).question+
+    "\n\nUse /economy solve to answer. Earn 50 coins for a correct answer.";
+  } else if (action === "solve") {
+   const result = await eco.playMathGame(guild,user.id,
+    interaction.options.getInteger("answer",true));
+   answer = result.won
+    ? "✅ Correct! You earned **"+fmt(result.prize,symbol)+"**!"
+    : "Not quite. The correct answer was "+result.result+
+      ". Try again in 10 minutes.";
   } else if (action === "leaderboard") {
    const list = await eco.top(guild);
    answer = "🏆 **Richest Members**\n\n" +

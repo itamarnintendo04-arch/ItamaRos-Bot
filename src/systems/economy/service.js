@@ -496,6 +496,60 @@ function getGameQuestion(userId) {
     return questions[idx];
 }
 
+
+function getMathQuestion(userId) {
+    const slot = Math.floor(Date.now() / GAME_COOLDOWN_MS);
+    const seed = Array.from(userId + ":" + slot + ":math")
+        .reduce((x, char) =>
+            (Math.imul(x, 31) + char.charCodeAt(0)) | 0, 7
+        ) >>> 0;
+    const first = (seed % 20) + 1;
+    const second = (Math.floor(seed / 31) % 20) + 1;
+    const mode = seed % 3;
+    return {
+        question: mode === 0
+            ? first + " + " + second + " = ?"
+            : mode === 1
+                ? (first + second) + " - " + first + " = ?"
+                : first + " × " + second + " = ?",
+        result: mode === 0
+            ? first + second
+            : mode === 1 ? second : first * second
+    };
+}
+
+async function playMathGame(guildId, userId, answer) {
+    if (!Number.isSafeInteger(answer) || answer < 0 || answer > 1000) {
+        fail("Provide a valid number between 0 and 1000.");
+    }
+    const challenge = getMathQuestion(userId);
+    const won = answer === challenge.result;
+    return inTransaction(async session => {
+        await setupAccount(guildId, userId, session);
+        const now = new Date();
+        const since = new Date(now.getTime() - GAME_COOLDOWN_MS);
+        const prize = won ? 50 : 0;
+        const updated = await accounts().updateOne({
+            _id: id(guildId, userId),
+            $or: [
+                { playAt: { $lte: since } },
+                { playAt: { $exists: false } }
+            ],
+            cash: { $lte: MAX_BALANCE - prize }
+        }, {
+            $set: { playAt: now },
+            $inc: { cash: prize }
+        }, { session });
+        if (!updated.modifiedCount) {
+            fail("Play again in 10 minutes.");
+        }
+        await log(session, guildId, "math_game", userId, null, prize, {
+            correct: won
+        });
+        return { ...challenge, won, prize };
+    });
+}
+
 async function top(guildId) {
     return accounts().aggregate([
         { $match: { guildId } },
@@ -511,5 +565,6 @@ module.exports = {
     getAccount, getSettings, getItem, getInventory, listItems,
     moveMoney, pay, earn, adjustMoney, setSetting,
     createItem, buy, sell, useItem, redeemRole, top,
-    stealCoins, playGame, getGameQuestion
+    stealCoins, playGame, getGameQuestion,
+    getMathQuestion, playMathGame
 };
