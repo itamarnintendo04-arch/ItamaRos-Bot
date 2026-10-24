@@ -331,7 +331,8 @@ async function confirmBuy(interaction, key, expectedPrice) {
 
     await interaction.deferUpdate();
     const purchase = await buyProduct(
-        interaction.guild, interaction.user, key, 1
+        interaction.guild, interaction.user, key, 1,
+        interaction.message.id
     );
     await notifyItemUsed({
         guild: interaction.guild,
