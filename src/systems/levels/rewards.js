@@ -3,7 +3,7 @@
 const { getDatabase, getMongoClient } = require("../../../database");
 const { ROLE_DEFINITIONS, ensureLevelInfrastructure } =
     require("./setup");
-const { MAX_XP } = require("../xp/service");
+const { MAX_XP, totalXpForLevel } = require("../xp/service");
 const { MAX_BALANCE } = require("../economy/service");
 
 const MAX_PROGRESS = MAX_XP;
@@ -231,7 +231,7 @@ async function reconcilePreviousMembers(client) {
     );
     const existing = await xpProfiles().find({
         guildId: guild.id,
-        xp: { $gte: 200 }
+        xp: { $gte: totalXpForLevel(1) }
     }).limit(MAX_BACKFILL_PROFILES).toArray();
 
     for (const item of existing) {
