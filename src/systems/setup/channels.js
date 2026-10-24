@@ -76,7 +76,7 @@ const SPECIFICATIONS = Object.freeze([
     {
         key: "kings-shop", name: "kings-shop",
         type: "text", policy: "kings",
-        intro: "👑🛒 **Kings Lounge**\n\nA private lounge for Kings members.\n\nUse /store list, /store inventory, and /economy balance. The store currently shares its catalog with the main shop; Kings-only items may be added later."
+        intro: "👑🛒 **Kings Lounge**\n\nA private lounge for Kings members.\n\nUse /store list, /store inventory, and /economy balance. Kings-only products are shown privately to Kings at their required rank. /shop opens your own Kings offers."
     },
     {
         key: "radio", name: "radio",
