@@ -179,6 +179,21 @@ async function changeXp(guildId, userId, operation, amount) {
                             { $max: [0, expression] }
                         ]
                     },
+                    activityXp: {
+                        $min: [MAX_XP, { $max: [0,
+                            operation === "set" ? amount : {
+                                $add: [
+                                    { $ifNull: ["$activityXp",
+                                        { $max: [0, { $subtract: [
+                                            { $ifNull: ["$xp", 0] },
+                                            { $ifNull: ["$bonusXpAwarded", 0] }
+                                        ] }] }
+                                    ] },
+                                    current
+                                ]
+                            }
+                        ] }]
+                    },
                     updatedAt: new Date()
                 }
             }
