@@ -8,6 +8,7 @@ const {
 const economy = require("./service");
 const { rewardSummary } = require("./rewardPurchase");
 const { STORE_CHANNEL_ID, clean } = require("./storePanel");
+const { getAccess, visibleItems } = require("./kingsAccess");
 
 const data = new SlashCommandBuilder()
     .setName("shop")
@@ -27,7 +28,8 @@ async function makePublicShop(guildId) {
         economy.listItems(guildId),
         economy.getSettings(guildId)
     ]);
-    const featured = items.slice(0, MAX_VISIBLE);
+    const publicItems = items.filter(item => item.kingsOnly !== true);
+    const featured = publicItems.slice(0, MAX_VISIBLE);
     const currency = clean(cfg.currency, 12) || "🪙";
 
     const lines = featured.map((item, index) =>
@@ -52,7 +54,7 @@ async function makePublicShop(guildId) {
             lines.length ? lines.join("\n\n")
                 : "No products available at the moment.",
             "",
-            items.length > MAX_VISIBLE
+            publicItems.length > MAX_VISIBLE
                 ? "More products are available with /store list."
                 : "",
             "🛟 Buttons not working? /store buy always works as backup.",
@@ -86,6 +88,44 @@ async function makePublicShop(guildId) {
         components: rows,
         allowedMentions: { parse: [] }
     };
+}
+
+async function makePrivateKingsShop(guild, userId) {
+    const access = await getAccess(guild, userId);
+    if (!access.king && !access.staff) return null;
+    const items = visibleItems(
+        await economy.listItems(guild.id), access
+    ).filter(item => item.kingsOnly === true);
+    if (!items.length) return null;
+
+    const featured = items.slice(0, MAX_VISIBLE);
+    const symbol = clean((await economy.getSettings(guild.id)).currency, 12);
+    const embed = new EmbedBuilder()
+        .setColor(0xD6B46D)
+        .setTitle("👑 Kings Exclusive Shop")
+        .setDescription([
+            "**Only you can see this Kings catalog.**",
+            "Eligible items for your current Kings rank:",
+            "",
+            ...featured.map(item => "👑 **" + clean(item.name, 60) + "** • " +
+                format(item.price) + " " + symbol +
+                "\\nLevel " + (item.minKingsLevel || 0) + "+ • ID: " + item.key),
+            items.length > MAX_VISIBLE
+                ? "\\nUse /store list to view more Kings products."
+                : ""
+        ].join("\\n").slice(0, 3850));
+
+    const buyable = featured.filter(item => item.stock === null || item.stock > 0);
+    const rows = [];
+    for (let i = 0; i < buyable.length && rows.length < 4; i += 5) {
+        rows.push(new ActionRowBuilder().addComponents(
+            ...buyable.slice(i, i + 5).map(item => new ButtonBuilder()
+                .setCustomId("is:buy:" + item.key)
+                .setLabel("Buy " + clean(item.name, 55))
+                .setStyle(ButtonStyle.Success))
+        ));
+    }
+    return { embeds: [embed], components: rows };
 }
 
 async function execute(interaction) {
@@ -143,7 +183,13 @@ async function execute(interaction) {
             throw error;
         }
 
+        const kingsShop = await makePrivateKingsShop(interaction.guild, interaction.user.id)
+            .catch(error => {
+                console.warn("[Shop] Kings catalog unavailable:", error);
+                return null;
+            });
         await interaction.editReply({
+            ...(kingsShop || {}),
             content: "✅ The shop is open for everyone in <#" +
                 STORE_CHANNEL_ID + ">!\n" +
                 "🔗 " + message.url,
@@ -159,4 +205,4 @@ async function execute(interaction) {
     }
 }
 
-module.exports = { data, execute, makePublicShop };
+module.exports = { data, execute, makePublicShop, makePrivateKingsShop };
