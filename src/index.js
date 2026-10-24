@@ -81,6 +81,7 @@ const openShopCommand = require("./systems/economy/openShopCommand");
 const xpLeaderboardCommand = require("./systems/xp/leaderboardCommand");
 const storeAdminCommand = require("./systems/economy/adminCommand");
 const radioAdminCommand = require("./systems/radio/adminCommand");
+const kingsRankCommand = require("./systems/kings/rankCommand");
 const tomorrowQuizCommand = require(
   "./systems/dailyQuestion/tomorrowCommand"
 );
@@ -178,7 +179,8 @@ const commandModules = [
   xpLeaderboardCommand,
   shopPanelCommand,
   storeAdminCommand,
-  radioAdminCommand
+  radioAdminCommand,
+  kingsRankCommand
 ];
 
 for (const command of commandModules) {
