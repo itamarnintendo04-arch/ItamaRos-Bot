@@ -106,11 +106,19 @@ function isCompatible(channel, spec, guildId) {
         channel.guildId === guildId &&
         (spec.type === "voice"
             ? channel.type === ChannelType.GuildVoice
-            : channel.type === ChannelType.GuildText));
+            : [ChannelType.GuildText, ChannelType.GuildAnnouncement]
+                .includes(channel.type)));
 }
 
 function roleValid(role, guildId) {
-    return role && role.id !== guildId && !role.managed;
+    if (!role || role.id === guildId || role.managed) return false;
+    // Never auto-grant a high-privilege role to a server booster.
+    const blocked = [
+        P.Administrator, P.ManageGuild, P.ManageRoles,
+        P.ManageChannels, P.BanMembers, P.KickMembers,
+        P.ManageWebhooks, P.ModerateMembers
+    ];
+    return blocked.every(permission => !role.permissions.has(permission));
 }
 
 async function getKingsRole(guild) {

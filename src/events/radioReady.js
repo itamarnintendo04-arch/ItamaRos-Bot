@@ -9,6 +9,7 @@ const {
 const config = require("../systems/radio/config");
 const radioPlayer = require("../systems/radio/player");
 const radioCredits = require("../systems/radio/credits");
+const { ensureChannels } = require("../systems/setup/channels");
 
 // The configured voice channel is joined when Discord is ready.
 // A missed connection is retried without restarting Render.
@@ -22,7 +23,9 @@ async function startRadio(client) {
         return;
     }
 
-    if (!config.voiceChannelId) {
+    const voiceChannelId = process.env.RADIO_VOICE_CHANNEL_ID || config.voiceChannelId;
+
+    if (!voiceChannelId) {
         console.warn(
             "[Radio] Missing RADIO_VOICE_CHANNEL_ID in Render."
         );
@@ -33,7 +36,7 @@ async function startRadio(client) {
 
     try {
         const channel = await client.channels.fetch(
-            config.voiceChannelId
+            voiceChannelId
         );
 
         if (!channel || channel.type !== ChannelType.GuildVoice) {
@@ -106,6 +109,7 @@ module.exports = {
     async execute(client) {
         if (!config.autoJoin) return;
 
+        await ensureChannels(client);
         await startRadio(client);
 
         if (!retryTimer) {

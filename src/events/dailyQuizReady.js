@@ -2,6 +2,7 @@
 "use strict";
 
 const { Events } = require("discord.js");
+const { ensureChannels } = require("../systems/setup/channels");
 
 const {
   startQuizScheduler
@@ -18,6 +19,7 @@ module.exports = {
 
   async execute(client) {
     try {
+      await ensureChannels(client);
       console.log(
         "[Daily Quiz] Initializing..."
       );
