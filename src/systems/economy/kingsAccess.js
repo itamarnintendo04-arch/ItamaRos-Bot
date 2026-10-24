@@ -3,8 +3,9 @@
 const { PermissionFlagsBits } = require("discord.js");
 const { getDatabase } = require("../../../database");
 const { getLevel } = require("../xp/service");
+const { tierForXp, MAX_RANK, baseKingsRole } = require("../kings/ranks");
 
-const MAX_KINGS_LEVEL = 1000;
+const MAX_KINGS_LEVEL = MAX_RANK;
 
 function isStaff(member) {
     return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild) ||
@@ -12,15 +13,7 @@ function isStaff(member) {
 }
 
 async function getKingsRoleId(guild) {
-    const configured = String(process.env.KINGS_ROLE_ID || "");
-    if (/^\d{17,20}$/.test(configured)) return configured;
-    const saved = await getDatabase().collection("bot_system_roles")
-        .findOne({ _id: guild.id + ":kings" });
-    if (/^\d{17,20}$/.test(String(saved?.roleId || ""))) {
-        return saved.roleId;
-    }
-    return guild.roles.cache.find(role =>
-        role.name.toLowerCase() === "kings")?.id || null;
+    return (await baseKingsRole(guild))?.id || null;
 }
 
 function kingsOnly(item) {
@@ -28,7 +21,7 @@ function kingsOnly(item) {
 }
 
 function minLevel(item) {
-    const level = item?.minKingsLevel ?? 0;
+    const level = item?.minKingsLevel ?? 1;
     return Number.isSafeInteger(level) ? Math.max(0, level) : 0;
 }
 
@@ -48,8 +41,8 @@ async function getAccess(guild, userId) {
     const king = Boolean(roleId && member.roles.cache.has(roleId));
     if (!king) return { staff: false, king: false, level: 0 };
 
-    const level = await getLevel(guild.id, userId);
-    return { staff: false, king: true, level };
+    const xpLevel = await getLevel(guild.id, userId);
+    return { staff: false, king: true, level: tierForXp(xpLevel * 200) };
 }
 
 async function assertCanAccess(guild, userId, item) {
@@ -57,7 +50,7 @@ async function assertCanAccess(guild, userId, item) {
     const access = await getAccess(guild, userId);
     if (!availableTo(item, access)) {
         throw new Error(
-            "This product is only available to Kings at level " +
+            "This product is only available to Kings at rank " +
             minLevel(item) + " or higher."
         );
     }
