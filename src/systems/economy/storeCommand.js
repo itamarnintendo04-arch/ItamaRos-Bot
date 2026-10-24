@@ -123,7 +123,8 @@ async function execute(interaction) {
         } else if (action === "buy") {
             if (interaction.user.bot) throw new Error("Bots cannot buy items.");
             const result = await buyProduct(
-                interaction.guild, interaction.user, key, quantity
+                interaction.guild, interaction.user, key, quantity,
+                interaction.id
             );
             response = "✅ Bought **" + result.quantity +
                 " × " + clean(result.item.name) +
