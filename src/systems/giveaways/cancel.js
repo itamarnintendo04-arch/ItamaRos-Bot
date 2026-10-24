@@ -127,15 +127,6 @@ function buildDisabledButtons(giveawayId) {
                 .setLabel("CANCELLED")
                 .setEmoji("🎉")
                 .setStyle(ButtonStyle.Secondary)
-                .setDisabled(true),
-
-            new ButtonBuilder()
-                .setCustomId(
-                    `${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:${giveawayId}`
-                )
-                .setLabel("CLOSED")
-                .setEmoji("❌")
-                .setStyle(ButtonStyle.Secondary)
                 .setDisabled(true)
         )
     ];

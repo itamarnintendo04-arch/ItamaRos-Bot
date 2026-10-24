@@ -74,15 +74,6 @@ function disabledButtons(giveawayId) {
                 .setLabel("GIVEAWAY ENDED")
                 .setEmoji("🎉")
                 .setStyle(ButtonStyle.Secondary)
-                .setDisabled(true),
-
-            new ButtonBuilder()
-                .setCustomId(
-                    `${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:${giveawayId}`
-                )
-                .setLabel("CLOSED")
-                .setEmoji("❌")
-                .setStyle(ButtonStyle.Secondary)
                 .setDisabled(true)
         )
     ];

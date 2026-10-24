@@ -222,6 +222,10 @@ async function leaveGiveaway(giveawayId, userId) {
     const update = {
         $pull: {
             participants: userId
+        },
+        $unset: {
+            [`leaveOffers.${userId}`]: "",
+            [`clicks.${userId}`]: ""
         }
     };
 

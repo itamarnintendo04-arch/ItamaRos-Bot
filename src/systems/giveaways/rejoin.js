@@ -213,15 +213,7 @@ async function refreshGiveawayMessage(client, giveawayId) {
                 )
                 .setLabel(`ENTER • ${count}`)
                 .setEmoji("🎉")
-                .setStyle(ButtonStyle.Success),
-
-            new ButtonBuilder()
-                .setCustomId(
-                    `${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:${giveawayId}`
-                )
-                .setLabel("LEAVE")
-                .setEmoji("❌")
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Success)
         );
 
         await message.edit({

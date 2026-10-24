@@ -102,13 +102,19 @@ function createGiveawayButtons(giveawayId, count) {
             )
             .setLabel(`ENTER • ${count}`)
             .setEmoji("🎉")
-            .setStyle(ButtonStyle.Success),
+            .setStyle(ButtonStyle.Success)
+    );
+}
 
+// LEAVE is shown privately after a second or later ENTER click.
+// It is never added to the public giveaway announcement.
+function createPrivateLeaveButton(giveawayId) {
+    return new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(
                 `${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:${giveawayId}`
             )
-            .setLabel("LEAVE")
+            .setLabel("LEAVE GIVEAWAY")
             .setEmoji("❌")
             .setStyle(ButtonStyle.Danger)
     );
@@ -343,7 +349,7 @@ async function handleGiveawayButtons(interaction) {
             _id: new ObjectId(giveawayId),
             guildId: interaction.guildId,
             channelId: interaction.channelId,
-            messageId: interaction.message.id
+            ...(isJoin ? { messageId: interaction.message.id } : {})
         });
 
         if (!giveaway) {
@@ -377,6 +383,31 @@ async function handleGiveawayButtons(interaction) {
             return true;
         }
 
+        // A private LEAVE button must come from a second ENTER.
+        // The offer expires, cannot be used after a normal exit,
+        // and is validated against active MongoDB participation.
+        if (isLeave) {
+            const offerAt = giveaway.leaveOffers?.[interaction.user.id];
+            const validOffer =
+                typeof offerAt === "number" &&
+                Date.now() >= offerAt &&
+                Date.now() - offerAt <= 15 * 60 * 1000;
+
+            if (!validOffer) {
+                await interaction.editReply({
+                    embeds: [
+                        createResponse(
+                            "🔒 Leave Not Available",
+                            "Click ENTER again on the giveaway message to see your private LEAVE button.",
+                            COLORS.WARNING
+                        )
+                    ],
+                    components: []
+                });
+                return true;
+            }
+        }
+
         if (isJoin) {
             const removedParticipants = Array.isArray(
                 giveaway.removedParticipants
@@ -399,6 +430,47 @@ async function handleGiveawayButtons(interaction) {
             : await leaveGiveaway(giveawayId, interaction.user.id);
 
         if (!result?.success) {
+            if (isJoin && result.reason === "ALREADY_JOINED") {
+                // The next ENTER from an existing participant
+                // offers an ephemeral LEAVE button. We don't
+                // store or display the number of clicks.
+                const offered = await collection.updateOne(
+                    {
+                        _id: new ObjectId(giveawayId),
+                        guildId: interaction.guildId,
+                        channelId: interaction.channelId,
+                        messageId: interaction.message.id,
+                        status: GIVEAWAY_SETTINGS.STATUS.ACTIVE,
+                        endsAt: { $gt: new Date() },
+                        participants: interaction.user.id
+                    },
+                    {
+                        $set: {
+                            [`leaveOffers.${interaction.user.id}`]: Date.now()
+                        }
+                    }
+                );
+
+                if (!offered.matchedCount) {
+                    await interaction.editReply({
+                        content: "⌛ This giveaway is no longer available."
+                    });
+                    return true;
+                }
+
+                await interaction.editReply({
+                    embeds: [
+                        createResponse(
+                            "🎉 Already Entered!",
+                            "You are already participating. If you wish to leave, use the private button below. After leaving, the next ENTER will be a fresh entry.",
+                            COLORS.INFO
+                        )
+                    ],
+                    components: [createPrivateLeaveButton(giveawayId)]
+                });
+                return true;
+            }
+
             if (
                 isJoin &&
                 [
@@ -464,6 +536,7 @@ async function handleGiveawayButtons(interaction) {
             );
         } else {
             await interaction.editReply({
+                components: [],
                 embeds: [
                     createResponse(
                         "✅ Entry Removed",

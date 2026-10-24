@@ -76,15 +76,7 @@ function buildParticipantButtons(giveawayId, count) {
                 )
                 .setLabel(`ENTER • ${count}`)
                 .setEmoji("🎉")
-                .setStyle(ButtonStyle.Success),
-
-            new ButtonBuilder()
-                .setCustomId(
-                    `${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:${giveawayId}`
-                )
-                .setLabel("LEAVE")
-                .setEmoji("❌")
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Success)
         )
     ];
 }
@@ -173,24 +165,17 @@ async function refreshGiveawayMessage(
         const joinId =
             `${GIVEAWAY_SETTINGS.JOIN_BUTTON_ID}:${giveawayId}`;
 
-        const leaveId =
-            `${GIVEAWAY_SETTINGS.LEAVE_BUTTON_ID}:${giveawayId}`;
 
         const joinButton = buttons.find(
             button => button.customId === joinId
         );
 
-        const leaveButton = buttons.find(
-            button => button.customId === leaveId
-        );
 
         // Only refresh a valid, still-interactive panel.
         // Never recreate buttons after an ending or cancellation.
         if (
             !joinButton ||
-            !leaveButton ||
-            joinButton.disabled ||
-            leaveButton.disabled
+            joinButton.disabled
         ) {
             return false;
         }
