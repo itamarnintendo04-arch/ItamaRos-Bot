@@ -10,6 +10,7 @@ const COLLECTION = "kings_boost_history";
 
 let timer = null;
 let checking = false;
+let initialScanComplete = false;
 
 function history() {
     return getDatabase().collection(COLLECTION);
@@ -191,6 +192,45 @@ async function onMemberUpdate(oldMember, member) {
     await stoppedBoosting(member, { startedAt: before });
 }
 
+async function includeExistingBoosters(guild) {
+    if (initialScanComplete) return;
+
+    // Boosters already active before this feature was enabled
+    // should receive Kings too. The scan runs once per process.
+    // GuildMembers privileged intent is required in Discord Portal.
+    const members = await guild.members.fetch();
+
+    let found = 0;
+    for (const member of members.values()) {
+        if (member.user?.bot) continue;
+        const startedAt = boostedSince(member);
+        if (!startedAt) continue;
+
+        const old = await history().findOne({
+            _id: memberKey(guild.id, member.id)
+        });
+        if (old?.activeBoost) continue;
+
+        try {
+            await startedBoosting(member, startedAt, {
+                silent: true
+            });
+            found++;
+        } catch (error) {
+            console.warn(
+                "[Kings] Existing booster " + member.id +
+                " could not be initialized: " + error.message
+            );
+        }
+    }
+
+    initialScanComplete = true;
+    console.log(
+        "[Kings] Initial scan complete (" + found +
+        " previously untracked boosters)."
+    );
+}
+
 async function checkMembers(client) {
     if (checking) return;
     const cfg = config();
@@ -200,6 +240,16 @@ async function checkMembers(client) {
     checking = true;
     try {
         const guild = await client.guilds.fetch(cfg.guildId);
+
+        try {
+            await includeExistingBoosters(guild);
+        } catch (error) {
+            console.warn(
+                "[Kings] Existing-member scan unavailable:",
+                error.message
+            );
+        }
+
         const rows = await history().find({
             guildId: cfg.guildId,
             activeBoost: true
@@ -282,6 +332,7 @@ function start(client) {
 function stop() {
     if (timer) clearInterval(timer);
     timer = null;
+    initialScanComplete = false;
 }
 
 module.exports = {
