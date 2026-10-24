@@ -39,7 +39,7 @@ class RadioPlayer extends EventEmitter {
 
     this.audioPlayer.on(AudioPlayerStatus.Idle, () => {
       if (this.running) {
-        this.scheduleNext(300);
+        this.scheduleNext(500);
       }
     });
 
@@ -50,7 +50,7 @@ class RadioPlayer extends EventEmitter {
 
       if (this.running) {
         this.audioPlayer.stop(true);
-        this.scheduleNext(1500);
+        this.scheduleNext(500);
       }
     });
   }
@@ -261,7 +261,7 @@ class RadioPlayer extends EventEmitter {
         this.audioPlayer.state.status ===
           AudioPlayerStatus.Idle
       ) {
-        this.scheduleNext(100);
+        this.scheduleNext(500);
       }
 
       this.emit("connected", this.channel);
@@ -297,7 +297,7 @@ class RadioPlayer extends EventEmitter {
     const track = this.queue.shift();
 
     if (!track || !fs.existsSync(track.path)) {
-      this.scheduleNext(300);
+      this.scheduleNext(500);
       return;
     }
 
@@ -328,11 +328,11 @@ class RadioPlayer extends EventEmitter {
       );
 
       this.emit("playbackError", error);
-      this.scheduleNext(1000);
+      this.scheduleNext(500);
     }
   }
 
-  scheduleNext(delay = 300) {
+  scheduleNext(delay = 500) {
     if (!this.running) return;
 
     if (this.nextTimer) {
