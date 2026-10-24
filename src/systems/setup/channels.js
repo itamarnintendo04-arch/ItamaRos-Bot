@@ -79,6 +79,11 @@ const SPECIFICATIONS = Object.freeze([
         intro: "👑🛒 **Kings Lounge**\n\nA private lounge for Kings members.\n\nUse /store list, /store inventory, and /economy balance. The store currently shares its catalog with the main shop; Kings-only items may be added later."
     },
     {
+        key: "radio-info", name: "radio-info", type: "text",
+        policy: "announcements",
+        intro: "📻 **ItamaRos Radio**\n\nJoin the voice channel named **radio** to listen to automatically played music. No song queue command is required.\n\n🛡️ **Staff:** add permitted music tracks to the bot's radio assets and configure RADIO_VOICE_CHANNEL_ID if using a custom channel."
+    },
+    {
         key: "radio", name: "radio",
         env: "RADIO_VOICE_CHANNEL_ID",
         type: "voice", policy: "radio",
@@ -243,10 +248,32 @@ async function permissionOverwrites(guild, botId, spec, kingsRole) {
     return [bot];
 }
 
-function findByName(channels, spec, guildId) {
-    return channels.find(channel =>
+function findByNameUnsafe(channels, spec, guildId) {
+    return Boolean(channels.find(channel =>
         isCompatible(channel, spec, guildId) &&
         channel.name.toLowerCase() === spec.name
+    ));
+}
+
+function privateEnough(channel, spec, guild, kingsRole) {
+    if (spec.policy !== "staff" && spec.policy !== "kings") {
+        return true;
+    }
+    const everyone = channel.permissionsFor(guild.roles.everyone);
+    if (!everyone || everyone.has(P.ViewChannel)) return false;
+    if (spec.policy === "kings") {
+        if (!kingsRole) return false;
+        const kings = channel.permissionsFor(kingsRole);
+        if (!kings || !kings.has(P.ViewChannel)) return false;
+    }
+    return true;
+}
+
+function findByName(channels, spec, guildId, guild, kingsRole) {
+    return channels.find(channel =>
+        isCompatible(channel, spec, guildId) &&
+        channel.name.toLowerCase() === spec.name &&
+        privateEnough(channel, spec, guild, kingsRole)
     );
 }
 
@@ -260,9 +287,16 @@ async function resolveOne(guild, channels, spec, kingsRole) {
     ].filter(value => DISCORD_ID.test(String(value || "")));
 
     let channel = ids.map(value => channels.get(value))
-        .find(candidate => isCompatible(candidate, spec, guild.id));
+        .find(candidate =>
+            isCompatible(candidate, spec, guild.id) &&
+            privateEnough(candidate, spec, guild, kingsRole)
+        );
 
-    if (!channel) channel = findByName(channels, spec, guild.id);
+    if (!channel) {
+        channel = findByName(
+            channels, spec, guild.id, guild, kingsRole
+        );
+    }
 
     let created = false;
     if (!channel) {
@@ -285,7 +319,11 @@ async function resolveOne(guild, channels, spec, kingsRole) {
         }
 
         channel = await guild.channels.create({
-            name: spec.name,
+            name: (
+                spec.policy === "staff" || spec.policy === "kings"
+            ) && findByNameUnsafe(channels, spec, guild.id)
+                ? spec.name + "-private"
+                : spec.name,
             type: spec.type === "voice"
                 ? ChannelType.GuildVoice
                 : ChannelType.GuildText,
@@ -322,6 +360,7 @@ async function resolveOne(guild, channels, spec, kingsRole) {
                 autoCreated: created || Boolean(
                     saved?.autoCreated && saved.channelId === channel.id
                 ),
+                ...(created ? { introSent: false } : {}),
                 updatedAt: new Date()
             },
             $setOnInsert: { createdAt: new Date() }
