@@ -1,0 +1,184 @@
+"use strict";
+
+const sharp = require("sharp");
+const {
+    AttachmentBuilder,
+    EmbedBuilder,
+    PermissionFlagsBits
+} = require("discord.js");
+
+function xml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;")
+        .replace(/[\x00-\x1f\x7f]/g, " ")
+        .slice(0, 100);
+}
+
+function displayText(value, limit = 25) {
+    return String(value ?? "Member").trim().slice(0, limit);
+}
+
+async function renderWelcomeImage(member, attribution, inviterName) {
+    const username = xml(displayText(
+        member.displayName || member.user.username, 28
+    ));
+
+    const inviter = attribution.inviterId
+        ? displayText(inviterName || "Known member", 23)
+        : "Unknown";
+
+    const first = xml(
+        displayText(member.displayName || member.user.username, 1)
+            .toUpperCase()
+    );
+
+    const visitorCount = Number(attribution.theirInvites || 0);
+    const inviterCount = attribution.inviterInvites ?? 0;
+
+    // Render a personalized PNG directly, no copyrighted
+    // game artwork or external image hosting necessary.
+    const svg = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480">',
+        '<defs>',
+        '<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#111128"/>',
+        '<stop offset="55%" stop-color="#26205e"/>',
+        '<stop offset="100%" stop-color="#4931a0"/>',
+        '</linearGradient>',
+        '<radialGradient id="orb"><stop offset="0%" stop-color="#ba9aff"/><stop offset="100%" stop-color="#6855cd"/></radialGradient>',
+        '</defs>',
+        '<rect width="1200" height="480" rx="35" fill="url(#bg)"/>',
+        '<circle cx="1120" cy="50" r="230" fill="#ffffff" opacity=".04"/>',
+        '<circle cx="1000" cy="420" r="220" fill="#bd8dff" opacity=".07"/>',
+        '<rect x="36" y="36" width="1128" height="408" rx="28" fill="none" stroke="#ffffff" stroke-opacity=".20" stroke-width="2"/>',
+        '<rect x="63" y="62" width="340" height="44" rx="22" fill="#ffffff" fill-opacity=".10"/>',
+        '<text x="86" y="92" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" fill="#eee9ff" font-weight="bold">ITAMAROS COMMUNITY</text>',
+        '<circle cx="105" cy="233" r="63" fill="url(#orb)" stroke="#ede0ff" stroke-opacity=".8" stroke-width="5"/>',
+        '<text x="105" y="255" font-family="DejaVu Sans, Arial, sans-serif" text-anchor="middle" font-size="65" font-weight="bold" fill="#ffffff">' + first + '</text>',
+        '<text x="200" y="192" font-family="DejaVu Sans, Arial, sans-serif" font-size="49" font-weight="bold" fill="#ffffff">WELCOME!</text>',
+        '<text x="200" y="250" font-family="DejaVu Sans, Arial, sans-serif" font-size="35" font-weight="bold" fill="#c4b5fd">' + username + '</text>',
+        '<text x="200" y="302" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" fill="#ede9fe">Invited by: ' + xml(inviter) + '</text>',
+        '<rect x="65" y="354" width="1070" height="58" rx="18" fill="#000000" fill-opacity=".23"/>',
+        '<text x="96" y="391" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" fill="#ffffff">Your invites: ' + visitorCount + '</text>',
+        '<text x="535" y="391" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" fill="#ffffff">Inviter invites: ' + inviterCount + '</text>',
+        '</svg>'
+    ].join("");
+
+    return sharp(Buffer.from(svg), { limitInputPixels: 3000000 })
+        .png()
+        .toBuffer();
+}
+
+async function sendWelcome(member, attribution) {
+    const guild = member.guild;
+    const channelId = process.env.WELCOME_CHANNEL_ID;
+
+    if (!channelId) {
+        console.warn(
+            "[Welcome] Set WELCOME_CHANNEL_ID in Render to enable greetings."
+        );
+        return false;
+    }
+
+    const channel = await guild.channels.fetch(channelId)
+        .catch(() => null);
+
+    if (
+        !channel ||
+        channel.guildId !== guild.id ||
+        !channel.isTextBased?.() ||
+        typeof channel.send !== "function"
+    ) {
+        console.warn("[Welcome] Invalid Discord welcome channel.");
+        return false;
+    }
+
+    const me = await guild.members.fetchMe();
+    const permissions = channel.permissionsFor(me);
+    if (
+        !permissions?.has(PermissionFlagsBits.ViewChannel) ||
+        !permissions?.has(PermissionFlagsBits.SendMessages) ||
+        !permissions?.has(PermissionFlagsBits.EmbedLinks)
+    ) {
+        console.warn("[Welcome] Bot needs View, Send and Embed permissions.");
+        return false;
+    }
+
+    let inviterName = null;
+    if (attribution.inviterId) {
+        const inviter = await guild.members
+            .fetch(attribution.inviterId)
+            .catch(() => null);
+
+        inviterName = inviter?.displayName ||
+            inviter?.user?.username || "Known member";
+    }
+
+    const inviterLabel = attribution.inviterId
+        ? "<@" + attribution.inviterId + ">"
+        : "Unknown (invite could not be identified)";
+
+    const inviterInvites = attribution.inviterInvites;
+    const embed = new EmbedBuilder()
+        .setColor(0x8B5CF6)
+        .setTitle("💜 Welcome to ItamaRos!")
+        .setDescription([
+            "🎉 Welcome <@" + member.id + ">!",
+            "",
+            "📨 **Invited by:** " + inviterLabel,
+            "🏆 **Inviter's invites:** " +
+                (inviterInvites === null ? "Unknown" : inviterInvites),
+            "🎟️ **Your invites:** " + (attribution.theirInvites || 0),
+            "👥 **Server member count:** " + guild.memberCount,
+            "",
+            "Enjoy your stay in our community!"
+        ].join("\n"))
+        .setFooter({ text: "ItamaRos Bot • Welcome System" })
+        .setTimestamp();
+
+    const payload = {
+        content: "Welcome to the server, <@" + member.id + ">! 💜",
+        embeds: [embed],
+        allowedMentions: {
+            parse: [],
+            users: [member.id]
+        }
+    };
+
+    try {
+        if (permissions.has(PermissionFlagsBits.AttachFiles)) {
+            const png = await renderWelcomeImage(
+                member,
+                attribution,
+                inviterName
+            );
+            embed.setImage("attachment://welcome.png");
+            payload.files = [
+                new AttachmentBuilder(png, { name: "welcome.png" })
+            ];
+        }
+
+        await channel.send(payload);
+        return true;
+    } catch (error) {
+        console.error("[Welcome] Image/message failed:", error);
+        // Still welcome the member if PNG rendering or upload fails.
+        await channel.send({
+            ...payload,
+            files: [],
+            embeds: [EmbedBuilder.from(embed).setImage(null)]
+        }).catch(failure => {
+            console.error(
+                "[Welcome] Text fallback failed:",
+                failure.message
+            );
+        });
+        return false;
+    }
+}
+
+module.exports = { sendWelcome, renderWelcomeImage };
