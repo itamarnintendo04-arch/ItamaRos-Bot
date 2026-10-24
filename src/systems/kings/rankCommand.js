@@ -40,7 +40,7 @@ async function execute(interaction) {
             ((xpProfile?.xp || 0) - (xpProfile?.bonusXpAwarded || 0))
         ) || 0);
 
-        const next = RANKS.find(rank => rank.tier > tier);
+        const next = tier > 0 ? RANKS.find(rank => rank.tier > tier) : null;
         const unlocks = tier ? RANKS.filter(rank => rank.tier <= tier)
             .map(rank => "• Level " + rank.tier + ": " +
                 rank.channels.join(", ")).join("\n") : "No Kings areas unlocked.";
@@ -53,6 +53,7 @@ async function execute(interaction) {
                 "**Kings rank:** " + (tier ? "Level " + tier + "/5" :
                     "Not a Kings member"),
                 "**Rank XP:** " + activityXp.toLocaleString("en-US"),
+                "!tier ? "**Next step:** Become a Kings member to unlock Level 1." : "",
                 next ? "**Next Kings level:** " + Math.max(0,
                     next.requiredXp - activityXp) + " activity XP remaining"
                     : tier === 5 ? "**Status:** Maximum rank reached!" : "",
