@@ -69,7 +69,7 @@ async function awardMessageXp(message) {
     const now = new Date();
     const cutoff = new Date(now.getTime() - MESSAGE_COOLDOWN_MS);
     const hash = createHash("sha256")
-        .update(message.content.trim().toLowerCase().replace(/\\s+/g, " "))
+        .update(message.content.trim().toLowerCase().replace(/\s+/g, " "))
         .digest("hex");
 
     // A persisted count drives progressive chat XP, even after bot restarts.
