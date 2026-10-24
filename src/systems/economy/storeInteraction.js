@@ -346,10 +346,10 @@ async function confirmBuy(interaction, key, expectedPrice) {
         try {
             const { ensureShopTicket } = require("./shopTickets");
             const ticket = await ensureShopTicket(interaction.guild, interaction.user, item, interaction.message.id);
-            ticketMessage = "\\n🎫 Your private delivery ticket: <#" + ticket.id + ">";
+            ticketMessage = "\n🎫 Your private delivery ticket: <#" + ticket.id + ">";
         } catch (error) {
             console.error("[Shop] Paid order needs staff attention:", error);
-            ticketMessage = "\\n⚠️ Payment succeeded, but ticket creation failed. Contact staff with your purchase details.";
+            ticketMessage = "\n⚠️ Payment succeeded, but ticket creation failed. Contact staff with your purchase details.";
         }
     }
     await interaction.editReply({
@@ -368,7 +368,7 @@ async function handleStoreInteraction(interaction) {
     if (!id || !id.startsWith(PREFIX)) return false;
 
     try {
-        if (interaction.isButton() && /^is:delivered:\\d+$/.test(id)) {
+        if (interaction.isButton() && /^is:delivered:\d+$/.test(id)) {
             const { markShopDelivered } = require("./shopTickets");
             await markShopDelivered(interaction);
             return true;
