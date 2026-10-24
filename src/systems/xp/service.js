@@ -1,6 +1,7 @@
 "use strict";
 
 const { getDatabase } = require("../../../database");
+const { createHash } = require("node:crypto");
 
 const {
     XP_PER_LEVEL,
@@ -13,8 +14,16 @@ const {
     totalXpForLevel
 } = require("./progression");
 
-const XP_PER_MESSAGE = 20;
+// Only one qualified message can earn XP per cooldown period.
+// The grant grows by +1 XP with every qualifying message: 5, 6, 7, ...
+const XP_PER_MESSAGE = 5;
+const MESSAGE_XP_GROWTH = 1;
 const MESSAGE_COOLDOWN_MS = 60000;
+
+function messageReward(awards) {
+    const count = Number.isSafeInteger(awards) && awards >= 0 ? awards : 0;
+    return Math.min(MAX_XP, XP_PER_MESSAGE + MESSAGE_XP_GROWTH * count);
+}
 
 function profiles() {
     return getDatabase().collection("member_xp");
@@ -32,7 +41,10 @@ async function getProfile(guildId, userId) {
     return {
         guildId,
         userId,
-        ...xpProgress(profile?.xp ?? 0)
+        ...xpProgress(profile?.xp ?? 0),
+        chatMessagesRewarded: profile?.messageXpAwards || 0,
+        lastMessageXp: profile?.lastMessageXp || 0,
+        nextMessageXp: messageReward(profile?.messageXpAwards || 0)
     };
 }
 
@@ -43,87 +55,80 @@ async function getLevel(guildId, userId) {
 
 async function awardMessageXp(message) {
     if (!message?.inGuild?.() ||
-        message.author?.bot ||
-        message.webhookId ||
+        message.author?.bot || message.webhookId ||
         message.content?.trim().length < 3) {
         return false;
     }
 
-    const { findBlockedWords } = require(
-        "../moderation/wordFilter"
-    );
-
-    if (findBlockedWords(message.content).length) {
-        return false;
-    }
+    const { findBlockedWords } = require("../moderation/wordFilter");
+    if (findBlockedWords(message.content).length) return false;
 
     const guildId = message.guildId;
     const userId = message.author.id;
     const id = memberId(guildId, userId);
     const now = new Date();
     const cutoff = new Date(now.getTime() - MESSAGE_COOLDOWN_MS);
+    const hash = createHash("sha256")
+        .update(message.content.trim().toLowerCase().replace(/\\s+/g, " "))
+        .digest("hex");
 
-    // Existing profiles only earn XP once every minute.
-    const update = await profiles().updateOne(
-        {
-            _id: id,
-            xp: { $lt: MAX_XP },
-            $or: [
-                { lastMessageXpAt: { $exists: false } },
-                { lastMessageXpAt: { $lte: cutoff } }
-            ]
-        },
-        [{
-            $set: {
-                xp: {
-                    $min: [
-                        MAX_XP,
-                        { $add: [
+    // A persisted count drives progressive chat XP, even after bot restarts.
+    // A conditional MongoDB pipeline makes each grant and count atomic.
+    const count = { $ifNull: ["$messageXpAwards", 0] };
+    const grant = { $add: [XP_PER_MESSAGE,
+        { $multiply: [MESSAGE_XP_GROWTH, count] }
+    ] };
+
+    const update = await profiles().updateOne({
+        _id: id,
+        xp: { $lt: MAX_XP },
+        lastXpMessageHash: { $ne: hash },
+        $or: [
+            { lastMessageXpAt: { $exists: false } },
+            { lastMessageXpAt: { $lte: cutoff } }
+        ]
+    }, [{
+        $set: {
+            xp: { $min: [
+                MAX_XP,
+                { $add: [{ $ifNull: ["$xp", 0] }, grant] }
+            ] },
+            // Bonus XP from milestone/store rewards never boosts activity XP.
+            activityXp: { $min: [
+                MAX_XP,
+                { $add: [
+                    { $ifNull: ["$activityXp", {
+                        $max: [0, { $subtract: [
                             { $ifNull: ["$xp", 0] },
-                            XP_PER_MESSAGE
-                        ] }
-                    ]
-                },
-                // Chat activity counts toward rank levels.
-                // Rank XP bonuses do NOT increment this value.
-                activityXp: {
-                    $min: [
-                        MAX_XP,
-                        { $add: [
-                            { $ifNull: [
-                                "$activityXp",
-                                { $max: [
-                                    0,
-                                    { $subtract: [
-                                        { $ifNull: ["$xp", 0] },
-                                        { $ifNull: ["$bonusXpAwarded", 0] }
-                                    ] }
-                                ] }
-                            ] },
-                            XP_PER_MESSAGE
-                        ] }
-                    ]
-                },
-                lastMessageXpAt: now,
-                updatedAt: now
-            }
-        }]
-    );
+                            { $ifNull: ["$bonusXpAwarded", 0] }
+                        ] }]
+                    }] },
+                    grant
+                ] }
+            ] },
+            messageXpAwards: { $add: [count, 1] },
+            lastMessageXp: grant,
+            lastXpMessageHash: hash,
+            lastMessageXpAt: now,
+            guildId, userId,
+            updatedAt: now
+        }
+    }]);
 
-    if (update.modifiedCount) {
-        return true;
-    }
+    if (update.modifiedCount) return true;
 
-    // New member document. Unique _id handles
-    // simultaneous messages safely.
+    // The new-member path is intentionally separate: an upsert with a
+    // cooldown predicate could instead attempt to insert a duplicate _id.
+    // A simultaneous first message gets just one XP grant.
     try {
         await profiles().insertOne({
-            _id: id,
-            guildId,
-            userId,
+            _id: id, guildId, userId,
             xp: XP_PER_MESSAGE,
             activityXp: XP_PER_MESSAGE,
             bonusXpAwarded: 0,
+            messageXpAwards: 1,
+            lastMessageXp: XP_PER_MESSAGE,
+            lastXpMessageHash: hash,
             lastMessageXpAt: now,
             updatedAt: now
         });
@@ -199,6 +204,9 @@ async function changeXp(guildId, userId, operation, amount) {
 module.exports = {
     XP_PER_LEVEL,
     XP_PER_MESSAGE,
+    MESSAGE_XP_GROWTH,
+    MESSAGE_COOLDOWN_MS,
+    messageReward,
     XP_GROWTH_PER_LEVEL,
     MAX_XP,
     xpRequiredForLevel,
