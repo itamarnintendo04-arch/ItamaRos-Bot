@@ -56,8 +56,8 @@ async function statusCard({
         '<text x="78" y="85" font-size="20" font-weight="bold" fill="#ffffff" font-family="DejaVu Sans, Arial, sans-serif">ITAMAROS EVENTS</text>',
         '<text x="67" y="172" font-size="76" font-weight="bold" fill="#ffffff" font-family="DejaVu Sans, Arial, sans-serif">' + xml(title) + '</text>',
         '<text x="68" y="250" font-size="54" font-weight="bold" fill="' + accent + '" font-family="DejaVu Sans, Arial, sans-serif">' + xml(statusTitle) + '</text>',
-        '<text x="69" y="324" font-size="29" fill="#ffffff" font-family="DejaVu Sans, Arial, sans-serif">' + xml(prize).slice(0, 65) + '</text>',
-        '<text x="69" y="378" font-size="20" fill="#e9dcff" font-family="DejaVu Sans, Arial, sans-serif">' + xml(subtitle).slice(0, 85) + '</text>',
+        '<text x="69" y="324" font-size="29" fill="#ffffff" font-family="DejaVu Sans, Arial, sans-serif">' + xml(String(prize).slice(0, 65)) + '</text>',
+        '<text x="69" y="378" font-size="20" fill="#e9dcff" font-family="DejaVu Sans, Arial, sans-serif">' + xml(String(subtitle).slice(0, 85)) + '</text>',
         '</svg>'
     ].join("");
 
