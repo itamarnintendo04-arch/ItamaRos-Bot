@@ -2,11 +2,19 @@
 
 const { getDatabase } = require("../../../database");
 
-const XP_PER_LEVEL = 200;
+const {
+    XP_PER_LEVEL,
+    XP_GROWTH_PER_LEVEL,
+    MAX_XP,
+    safeXp,
+    xpToLevel,
+    xpProgress,
+    xpRequiredForLevel,
+    totalXpForLevel
+} = require("./progression");
+
 const XP_PER_MESSAGE = 20;
 const MESSAGE_COOLDOWN_MS = 60000;
-const MAX_LEVEL = 1000;
-const MAX_XP = XP_PER_LEVEL * MAX_LEVEL;
 
 function profiles() {
     return getDatabase().collection("member_xp");
@@ -16,31 +24,15 @@ function memberId(guildId, userId) {
     return `${guildId}:${userId}`;
 }
 
-function safeXp(value) {
-    if (!Number.isFinite(value)) return 0;
-    return Math.max(0, Math.min(MAX_XP, Math.floor(value)));
-}
-
-function xpToLevel(value) {
-    return Math.floor(safeXp(value) / XP_PER_LEVEL);
-}
-
 async function getProfile(guildId, userId) {
     const profile = await profiles().findOne({
         _id: memberId(guildId, userId)
     });
 
-    const xp = safeXp(profile?.xp ?? 0);
-
     return {
         guildId,
         userId,
-        xp,
-        level: xpToLevel(xp),
-        xpInLevel: xp % XP_PER_LEVEL,
-        xpToNextLevel: xp >= MAX_XP
-            ? 0
-            : XP_PER_LEVEL - (xp % XP_PER_LEVEL)
+        ...xpProgress(profile?.xp ?? 0)
     };
 }
 
@@ -207,8 +199,10 @@ async function changeXp(guildId, userId, operation, amount) {
 module.exports = {
     XP_PER_LEVEL,
     XP_PER_MESSAGE,
-    MAX_LEVEL,
+    XP_GROWTH_PER_LEVEL,
     MAX_XP,
+    xpRequiredForLevel,
+    totalXpForLevel,
     xpToLevel,
     getProfile,
     getLevel,
