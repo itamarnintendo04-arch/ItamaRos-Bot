@@ -1,123 +1,311 @@
 "use strict";
-const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } =
- require("discord.js");
+
+const {
+    SlashCommandBuilder,
+    PermissionFlagsBits,
+    MessageFlags
+} = require("discord.js");
 const eco = require("./service");
+const photos = require("./itemImages");
 const { refreshStorePanel } = require("./storePanel");
 
-const data = new SlashCommandBuilder().setName("store-admin")
- .setDescription("Manage the virtual currency and store")
- .setDMPermission(false)
- .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
+const P = PermissionFlagsBits;
 
-data.addSubcommand(s=>s.setName("create").setDescription("Add a shop item")
- .addStringOption(o=>o.setName("name").setDescription("Item name (English letters/numbers)").setRequired(true))
- .addIntegerOption(o=>o.setName("price").setDescription("Price").setRequired(true).setMinValue(1).setMaxValue(1000000000))
- .addStringOption(o=>o.setName("type").setDescription("Item kind").setRequired(true)
-  .addChoices({name:"Collectible",value:"collectible"},{name:"Consumable",value:"consumable"},{name:"Discord role",value:"role"}))
- .addStringOption(o=>o.setName("description").setDescription("Item description").setRequired(false))
- .addRoleOption(o=>o.setName("role").setDescription("Role (for role items)").setRequired(false))
- .addIntegerOption(o=>o.setName("stock").setDescription("Available stock, omit for unlimited").setMinValue(0).setRequired(false))
- .addStringOption(o=>o.setName("category").setDescription("Shop category").setRequired(false)));
-data.addSubcommand(s=>s.setName("remove-item").setDescription("Hide a shop item")
- .addStringOption(o=>o.setName("item").setDescription("Item key/name").setRequired(true)));
-for(const mode of ["add","remove","set"]) {
- data.addSubcommand(s=>s.setName(mode).setDescription(mode+" virtual coins")
-  .addUserOption(o=>o.setName("member").setDescription("Member").setRequired(true))
-  .addStringOption(o=>o.setName("balance").setDescription("Wallet or bank")
-   .setRequired(true).addChoices(
-    {name:"Wallet",value:"cash"},{name:"Bank",value:"bank"}))
-  .addIntegerOption(o=>o.setName("amount").setDescription("Coins")
-   .setRequired(true).setMinValue(0).setMaxValue(1000000000)));
+const data = new SlashCommandBuilder()
+    .setName("store-admin")
+    .setDescription("Manage items and virtual currency")
+    .setDMPermission(false)
+    .setDefaultMemberPermissions(P.ManageGuild);
+
+function addProperties(sub, required) {
+    if (required) {
+        sub.addStringOption(o => o.setName("name")
+            .setDescription("Item name")
+            .setMinLength(2).setMaxLength(70).setRequired(true));
+        sub.addIntegerOption(o => o.setName("price")
+            .setDescription("Price in virtual coins")
+            .setMinValue(1).setMaxValue(eco.MAX_AMOUNT)
+            .setRequired(true));
+        sub.addStringOption(o => o.setName("type")
+            .setDescription("Item type").setRequired(true)
+            .addChoices(
+                { name: "Collectible", value: "collectible" },
+                { name: "Consumable", value: "consumable" },
+                { name: "Discord role", value: "role" }
+            ));
+    } else {
+        sub.addStringOption(o => o.setName("name")
+            .setDescription("New displayed item name")
+            .setMinLength(2).setMaxLength(70).setRequired(false));
+        sub.addIntegerOption(o => o.setName("price")
+            .setDescription("New price")
+            .setMinValue(1).setMaxValue(eco.MAX_AMOUNT)
+            .setRequired(false));
+        sub.addStringOption(o => o.setName("type")
+            .setDescription("Change item type")
+            .setRequired(false)
+            .addChoices(
+                { name: "Collectible", value: "collectible" },
+                { name: "Consumable", value: "consumable" },
+                { name: "Discord role", value: "role" }
+            ));
+    }
+
+    return sub
+        .addStringOption(o => o.setName("description")
+            .setDescription("Product description")
+            .setMaxLength(500).setRequired(false))
+        .addStringOption(o => o.setName("category")
+            .setDescription("Product category")
+            .setMaxLength(40).setRequired(false))
+        .addIntegerOption(o => o.setName("stock")
+            .setDescription("Available quantity (-1 for unlimited)")
+            .setMinValue(-1).setMaxValue(eco.MAX_AMOUNT)
+            .setRequired(false))
+        .addRoleOption(o => o.setName("role")
+            .setDescription("Role given when a role item is redeemed")
+            .setRequired(false))
+        .addAttachmentOption(o => o.setName("image")
+            .setDescription("Optional product photo (PNG/JPG/WebP/GIF; max 7 MB)")
+            .setRequired(false));
 }
-data.addSubcommand(s=>s.setName("currency").setDescription("Change the currency symbol")
- .addStringOption(o=>o.setName("symbol").setDescription("Emoji or short label")
-  .setRequired(true).setMaxLength(12)));
-data.addSubcommand(s=>s.setName("rewards").setDescription("Set daily and work rewards")
- .addIntegerOption(o=>o.setName("daily").setDescription("Daily coins").setMinValue(0).setRequired(true))
- .addIntegerOption(o=>o.setName("work").setDescription("Work coins").setMinValue(0).setRequired(true)));
+
+data.addSubcommand(s => addProperties(
+    s.setName("create").setDescription("Create a new product"), true
+));
+
+data.addSubcommand(s => addProperties(
+    s.setName("update").setDescription("Edit an existing product")
+        .addStringOption(o => o.setName("item")
+            .setDescription("Existing item ID from the shop")
+            .setRequired(true)), false
+).addBooleanOption(o => o.setName("remove-image")
+    .setDescription("Remove the product picture").setRequired(false))
+.addBooleanOption(o => o.setName("enabled")
+    .setDescription("Show or hide this product in the store")
+    .setRequired(false)));
+
+data.addSubcommand(s => s.setName("remove-item")
+    .setDescription("Hide a product (preserves purchased inventory)")
+    .addStringOption(o => o.setName("item")
+        .setDescription("Item key or original name").setRequired(true)));
+
+for (const mode of ["add", "remove", "set"]) {
+    data.addSubcommand(s => s.setName(mode)
+        .setDescription(mode + " virtual coins")
+        .addUserOption(o => o.setName("member")
+            .setDescription("Member").setRequired(true))
+        .addStringOption(o => o.setName("balance")
+            .setDescription("Wallet or bank").setRequired(true)
+            .addChoices(
+                { name: "Wallet", value: "cash" },
+                { name: "Bank", value: "bank" }
+            ))
+        .addIntegerOption(o => o.setName("amount")
+            .setDescription("Coins")
+            .setMinValue(0).setMaxValue(eco.MAX_AMOUNT)
+            .setRequired(true)));
+}
+
+data.addSubcommand(s => s.setName("currency")
+    .setDescription("Update server currency symbol")
+    .addStringOption(o => o.setName("symbol")
+        .setDescription("Emoji or short label")
+        .setMaxLength(12).setRequired(true)));
+
+data.addSubcommand(s => s.setName("rewards")
+    .setDescription("Update daily and work rewards")
+    .addIntegerOption(o => o.setName("daily")
+        .setDescription("Daily coins")
+        .setMinValue(0).setMaxValue(eco.MAX_AMOUNT)
+        .setRequired(true))
+    .addIntegerOption(o => o.setName("work")
+        .setDescription("Work coins")
+        .setMinValue(0).setMaxValue(eco.MAX_AMOUNT)
+        .setRequired(true)));
+
+const forbiddenRolePermissions = [
+    P.Administrator, P.ManageGuild, P.ManageRoles,
+    P.ManageChannels, P.BanMembers, P.KickMembers,
+    P.ModerateMembers, P.ManageWebhooks
+];
+
+async function validateRole(guild, role) {
+    if (!role) return;
+    if (role.id === guild.id || role.managed ||
+        role.name === "Kings" ||
+        /^Level [1-3]$/.test(role.name)) {
+        throw new Error("This special or managed role cannot be sold.");
+    }
+    if (forbiddenRolePermissions.some(p => role.permissions.has(p))) {
+        throw new Error("Store roles cannot grant moderation permissions.");
+    }
+    const bot = await guild.members.fetchMe();
+    if (role.position >= bot.roles.highest.position) {
+        throw new Error("Move the bot role above the product role.");
+    }
+}
+
+function getProperties(options, isCreate) {
+    const props = {};
+    const keys = ["name", "description", "category", "type"];
+    for (const field of keys) {
+        const value = options.getString(field);
+        if (value !== null) props[field] = value;
+    }
+    const price = options.getInteger("price");
+    if (price !== null) props.price = price;
+
+    const stock = options.getInteger("stock");
+    if (stock !== null) props.stock = stock === -1 ? null : stock;
+
+    const role = options.getRole("role");
+    if (role) props.roleId = role.id;
+    if (isCreate) {
+        props.name = options.getString("name", true);
+        props.price = options.getInteger("price", true);
+        props.type = options.getString("type", true);
+    }
+    return { props, role };
+}
 
 async function execute(interaction) {
- if(!interaction.inGuild()||
-   !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)){
-   return interaction.reply({
-    content:"❌ Manage Server permission required.",
-    flags:MessageFlags.Ephemeral
-   });
- }
- await interaction.deferReply({flags:MessageFlags.Ephemeral});
- try{
-  const guild=interaction.guildId;
-  const action=interaction.options.getSubcommand();
-  let reply="";
-  if(action==="create"){
-   const role=interaction.options.getRole("role");
-   const type=interaction.options.getString("type",true);
-   if(type==="role"){
-    if(!role||role.id===guild||role.managed){
-     throw Error("Select a regular server role to sell.");
+    if (!interaction.inGuild() ||
+        !interaction.memberPermissions?.has(P.ManageGuild)) {
+        return interaction.reply({
+            content: "❌ Manage Server permission required.",
+            flags: MessageFlags.Ephemeral
+        });
     }
-    const bot=await interaction.guild.members.fetchMe();
-    if(role.position>=bot.roles.highest.position){
-     throw Error("The bot role must be above the item role.");
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    try {
+        const guild = interaction.guild;
+        const action = interaction.options.getSubcommand();
+        const guildId = interaction.guildId;
+        let response = "";
+        let refresh = false;
+
+        if (action === "create" || action === "update") {
+            const create = action === "create";
+            const { props, role } = getProperties(
+                interaction.options, create
+            );
+            if (role) await validateRole(guild, role);
+
+            const image = interaction.options.getAttachment("image");
+            const clearImage = !create &&
+                interaction.options.getBoolean("remove-image") === true;
+            if (image && clearImage) {
+                throw new Error("Choose an image OR remove-image, not both.");
+            }
+
+            const processed = image
+                ? await photos.readAttachment(image) : null;
+
+            let item;
+            if (create) {
+                if (props.type === "role" && !role) {
+                    throw new Error("A role product needs a Discord role.");
+                }
+                item = await eco.createItem(guildId, props);
+            } else {
+                const key = interaction.options.getString("item", true);
+                const enabled = interaction.options.getBoolean("enabled");
+                if (enabled !== null) props.enabled = enabled;
+
+                if (!Object.keys(props).length &&
+                    !processed && !clearImage) {
+                    throw new Error("Choose a field or photo to update.");
+                }
+
+                item = Object.keys(props).length
+                    ? await eco.updateItem(guildId, key, props)
+                    : await eco.getItem(guildId, key);
+                if (!item) throw new Error("Product not found.");
+            }
+
+            if (processed || clearImage) {
+                try {
+                    if (processed) {
+                        await photos.saveImage(guildId, item.key, processed);
+                    } else {
+                        await photos.removeImage(guildId, item.key);
+                    }
+                } catch (error) {
+                    throw new Error(
+                        "Product saved, but the image update failed: " +
+                        error.message
+                    );
+                }
+            }
+
+            response = "✅ **" + item.name + "** " +
+                (create ? "created" : "updated") +
+                " successfully. Item ID: " + item.key;
+            refresh = true;
+        } else if (action === "remove-item") {
+            const key = interaction.options.getString("item", true);
+            const item = await eco.getItem(guildId, key);
+            if (!item) throw new Error("Product not found.");
+            await eco.catalog().updateOne(
+                { _id: item._id },
+                { $set: { enabled: false, updatedAt: new Date() } }
+            );
+            response = "✅ **" + item.name +
+                "** hidden from the store. Owned items remain.";
+            refresh = true;
+        } else if (["add", "remove", "set"].includes(action)) {
+            const member = interaction.options.getUser("member", true);
+            if (member.bot) {
+                throw new Error("Bots cannot gain or lose virtual coins.");
+            }
+            const kind = interaction.options.getString("balance", true);
+            const amount = interaction.options.getInteger("amount", true);
+            const balance = await eco.adjustMoney(
+                guildId, member.id, action, kind, amount,
+                interaction.user.id
+            );
+            response = "✅ <@" + member.id + "> now has " +
+                balance + " coins in " + kind + ".";
+        } else if (action === "currency") {
+            const symbol = interaction.options.getString("symbol", true);
+            await eco.setSetting(guildId, "currency", symbol);
+            response = "✅ Currency symbol updated.";
+            refresh = true;
+        } else if (action === "rewards") {
+            const daily = interaction.options.getInteger("daily", true);
+            const work = interaction.options.getInteger("work", true);
+            await eco.setSetting(guildId, "dailyReward", daily);
+            await eco.setSetting(guildId, "workReward", work);
+            response = "✅ Daily and work rewards updated.";
+        } else {
+            throw new Error("Unknown management action.");
+        }
+
+        if (refresh) {
+            await refreshStorePanel(guild).catch(error => {
+                console.warn(
+                    "[Item Store] Panel refresh failed:", error.message
+                );
+                response += "\n⚠️ The shop display could not refresh.";
+            });
+        }
+
+        await interaction.editReply({
+            content: response,
+            allowedMentions: { parse: [] }
+        });
+    } catch (error) {
+        console.error("[StoreAdmin] Command error:", error);
+        await interaction.editReply({
+            content: "❌ " +
+                String(error.message || "Could not manage the store.")
+                    .slice(0, 350),
+            allowedMentions: { parse: [] }
+        }).catch(() => {});
     }
-   }
-   const item=await eco.createItem(guild,{
-    name:interaction.options.getString("name",true),
-    price:interaction.options.getInteger("price",true),
-    type,
-    description:interaction.options.getString("description")||"",
-    roleId:role?.id,
-    stock:interaction.options.getInteger("stock"),
-    category:interaction.options.getString("category")||"General"
-   });
-   reply="✅ Shop item **"+item.name+"** created.";
-  }else if(action==="remove-item"){
-   const key=interaction.options.getString("item",true);
-   const item=await eco.getItem(guild,key);
-   if(!item)throw Error("Item not found.");
-   await eco.catalog().updateOne({_id:item._id},{$set:{
-    enabled:false,updatedAt:new Date()
-   }});
-   reply="✅ **"+item.name+"** removed from shop listings.";
-  }else if(["add","remove","set"].includes(action)){
-   const member=interaction.options.getUser("member",true);
-   if(member.bot)throw Error("Bots cannot receive or lose virtual coins.");
-   const kind=interaction.options.getString("balance",true);
-   const n=interaction.options.getInteger("amount",true);
-   const balance=await eco.adjustMoney(
-    guild,member.id,action,kind,n,interaction.user.id
-   );
-   reply="✅ <@"+member.id+"> now has **"+balance+"** in "+kind+".";
-  }else if(action==="currency"){
-   const currency=interaction.options.getString("symbol",true);
-   await eco.setSetting(guild,"currency",currency);
-   reply="✅ Currency changed to "+currency.replace(/@/g,"@\u200b")+".";
-  }else if(action==="rewards"){
-   const daily=interaction.options.getInteger("daily",true);
-   const work=interaction.options.getInteger("work",true);
-   await eco.setSetting(guild,"dailyReward",daily);
-   await eco.setSetting(guild,"workReward",work);
-   reply="✅ Rewards updated. Daily: "+daily+", work: "+work+".";
-  }
-  // Keep the public catalog in the ORIGINAL #item-store current.
-  // Publishing failures must never roll back valid store operations.
-  if(["create", "remove-item", "currency"].includes(action)){
-   await refreshStorePanel(interaction.guild).catch(error=>{
-    console.warn(
-     "[Item Store] Couldn't refresh shop panel:",
-     error.message
-    );
-   });
-  }
-  await interaction.editReply({
-   content:reply,allowedMentions:{parse:[]}
-  });
- }catch(error){
-  console.error("[StoreAdmin]",error);
-  await interaction.editReply({
-   content:"❌ "+String(error.message||"Unable to update store.").slice(0,200),
-   allowedMentions:{parse:[]}
-  }).catch(()=>{});
- }
 }
-module.exports={data,execute};
+
+module.exports = { data, execute };
