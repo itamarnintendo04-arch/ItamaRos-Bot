@@ -10,7 +10,8 @@ const {
   Events,
   REST,
   Routes,
-  MessageFlags
+  MessageFlags,
+  PermissionFlagsBits
 } = require("discord.js");
 
 const fs = require("node:fs");
@@ -193,6 +194,14 @@ for (const command of commandModules) {
     throw new Error(
       `Duplicate command: ${command.data.name}`
     );
+  }
+
+  // Staff commands must be hidden from members without the required permissions.
+  const staffOnly = /(?:-admin)$/.test(command.data.name) ||
+    ["warn", "kings-giveaway", "giveaway", "drop"].includes(command.data.name);
+  if (staffOnly && command.data.setDefaultMemberPermissions &&
+      command.data.toJSON().default_member_permissions == null) {
+    command.data.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
   }
 
   client.commands.set(
