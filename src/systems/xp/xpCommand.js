@@ -6,7 +6,7 @@ const {
     MessageFlags
 } = require("discord.js");
 
-const { changeXp, MAX_XP } = require("./service");
+const { changeXp, getProfile, MAX_XP } = require("./service");
 
 const data = new SlashCommandBuilder()
     .setName("xp")
@@ -61,7 +61,7 @@ async function execute(interaction) {
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const profile = await changeXp(
+    let profile = await changeXp(
         interaction.guildId,
         user.id,
         interaction.options.getSubcommand(),
@@ -71,8 +71,11 @@ async function execute(interaction) {
     let kingsNote = "";
     try {
         const member = await interaction.guild.members.fetch(user.id);
+        const { reconcileMember } = require("../levels/rewards");
+        await reconcileMember(member, { announce: false });
         const { syncMemberRank } = require("../kings/ranks");
         const tier = await syncMemberRank(member);
+        profile = await getProfile(interaction.guildId, user.id);
         if (tier) kingsNote = " 👑 Kings Level " + tier + ".";
     } catch (error) {
         console.warn("[Kings Ranks] Staff XP role update failed:", error.message);
