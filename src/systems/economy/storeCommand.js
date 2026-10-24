@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 const eco = require("./service");
 const { notifyItemUsed } = require("./useNotifications");
+const { buyProduct, rewardSummary } = require("./rewardPurchase");
 const { productDetails } = require("./storeInteraction");
 const { clean } = require("./storePanel");
 
@@ -119,14 +120,28 @@ async function execute(interaction) {
                 ).join("\n") : "No items purchased yet.");
         } else if (action === "buy") {
             if (interaction.user.bot) throw new Error("Bots cannot buy items.");
-            const result = await eco.buy(
-                guildId, userId, key, quantity
+            const result = await buyProduct(
+                interaction.guild, interaction.user, key, quantity
             );
             response = "✅ Bought **" + result.quantity +
                 " × " + clean(result.item.name) +
                 "** for **" + fmt(result.cost, currency) +
-                "**.\nYour purchase is saved in your inventory.";
+                "**.\n" + (result.instant
+                    ? "🎁 Delivered instantly: " + rewardSummary(result.item)
+                    : "Your purchase is saved in your inventory.");
+            if (result.instant) {
+                await notifyItemUsed({
+                    guild: interaction.guild,
+                    user: interaction.user,
+                    item: result.item,
+                    action: "Instant rewards delivered"
+                });
+            }
         } else if (action === "sell") {
+            const item = await eco.getItem(guildId, key);
+            if (item?.type === "reward") {
+                throw new Error("Instant rewards cannot be sold back.");
+            }
             const result = await eco.sell(
                 guildId, userId, key, quantity
             );
@@ -137,6 +152,9 @@ async function execute(interaction) {
             const item = await eco.getItem(guildId, key);
             if (!item) throw new Error("Product not found.");
 
+            if (item.type === "reward") {
+                throw new Error("Instant rewards are delivered at purchase; no /store use needed.");
+            }
             if (item.type === "role") {
                 const member = await interaction.guild.members.fetch(userId);
                 await eco.redeemRole(guildId, userId, key, member);
