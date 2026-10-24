@@ -219,12 +219,20 @@ async function createItem(guildId, info) {
             fail("Select at least one valid reward: XP, coins or role.");
         }
     }
+    const kingsOnly = info.kingsOnly === true;
+    const minKingsLevel = info.minKingsLevel ?? 0;
+    if (!Number.isSafeInteger(minKingsLevel) ||
+        minKingsLevel < 0 || minKingsLevel > 1000 ||
+        (!kingsOnly && minKingsLevel !== 0)) {
+        fail("Kings level requires Kings-only mode and must be 0-1000.");
+    }
     const document = {
         _id: itemId(guildId, info.name),
         guildId, key, name: String(info.name).slice(0, 70),
         description: String(info.description || "").slice(0, 500),
         category: String(info.category || "General").slice(0, 40),
         price, type,
+        kingsOnly, minKingsLevel,
         isShopPack: Boolean(validated?.isPack),
         externalRewards: validated ? [...validated.external] : [],
         rewards: type === "reward" ? {
@@ -303,6 +311,30 @@ async function updateItem(guildId, key, patch) {
     }
     if (Object.prototype.hasOwnProperty.call(patch, "roleId")) {
         fields.roleId = patch.roleId;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "kingsOnly")) {
+        if (typeof patch.kingsOnly !== "boolean") {
+            fail("Invalid Kings-only setting.");
+        }
+        fields.kingsOnly = patch.kingsOnly;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "minKingsLevel")) {
+        if (!Number.isSafeInteger(patch.minKingsLevel) ||
+            patch.minKingsLevel < 0 || patch.minKingsLevel > 1000) {
+            fail("Kings minimum level must be between 0 and 1000.");
+        }
+        fields.minKingsLevel = patch.minKingsLevel;
+    }
+    const finalKingsOnly = fields.kingsOnly ?? (existing.kingsOnly === true);
+    const finalKingsLevel = fields.minKingsLevel ?? existing.minKingsLevel ?? 0;
+    if (!finalKingsOnly && finalKingsLevel !== 0) {
+        // Disabling Kings-only also removes its level requirement.
+        if (fields.kingsOnly === false &&
+            !Object.prototype.hasOwnProperty.call(fields, "minKingsLevel")) {
+            fields.minKingsLevel = 0;
+        } else {
+            fail("A Kings minimum level requires Kings-only mode.");
+        }
     }
     if (Object.prototype.hasOwnProperty.call(patch, "enabled")) {
         if (typeof patch.enabled !== "boolean") fail("Invalid status.");
