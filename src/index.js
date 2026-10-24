@@ -73,7 +73,7 @@ const levelCommand = require("./systems/xp/levelCommand");
 const xpCommand = require("./systems/xp/xpCommand");
 const invitesCommand = require("./systems/invites/command");
 const economyCommand = require("./systems/economy/command");
-const storeCommand = require("./systems/economy/storeCommand");
+const shopPanelCommand = require("./systems/economy/panelCommand");
 const storeAdminCommand = require("./systems/economy/adminCommand");
 const tomorrowQuizCommand = require(
   "./systems/dailyQuestion/tomorrowCommand"
@@ -166,7 +166,7 @@ const commandModules = [
   tomorrowQuizCommand,
   invitesCommand,
   economyCommand,
-  storeCommand,
+  shopPanelCommand,
   storeAdminCommand
 ];
 
@@ -336,15 +336,13 @@ async function registerCommands() {
     "[Commands] Registering all commands..."
   );
 
-  // Retire the previous slash command: YouTube now uses
-  // Render environment variables, not /youtube setup.
+  // Retire commands superseded by server automation and the
+  // interactive shop. Buyers use the item-store panel and not /store.
   try {
     const existing = await rest.get(route);
-    const legacy = Array.isArray(existing)
-      ? existing.find(item => item.name === "youtube")
-      : null;
-
-    if (legacy) {
+    const retired = new Set(["youtube", "store"]);
+    for (const legacy of Array.isArray(existing) ? existing : []) {
+      if (!retired.has(legacy.name)) continue;
       await rest.delete(
         Routes.applicationGuildCommand(
           config.CLIENT_ID,
@@ -352,11 +350,13 @@ async function registerCommands() {
           legacy.id
         )
       );
-      console.log("[Commands] Removed retired /youtube command.");
+      console.log(
+        "[Commands] Removed retired /" + legacy.name + " command."
+      );
     }
   } catch (error) {
     console.warn(
-      "[Commands] Could not remove retired /youtube:",
+      "[Commands] Could not remove retired commands:",
       error.message
     );
   }
