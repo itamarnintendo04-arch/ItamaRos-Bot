@@ -8,8 +8,8 @@ const {
 
 let refreshTimer = null;
 
-async function syncExistingKings(client) {
-    const setup = await ensureRankInfrastructure(client);
+async function syncExistingKings(client, refresh = false) {
+    const setup = await ensureRankInfrastructure(client, { refresh });
     const members = await setup.guild.members.fetch();
     const rankRoleIds = new Set([...setup.roles.values()].map(role => role.id));
     let synced = 0;
@@ -38,7 +38,7 @@ module.exports = {
 
         if (!refreshTimer) {
             refreshTimer = setInterval(() => {
-                syncExistingKings(client).catch(error => {
+                syncExistingKings(client, true).catch(error => {
                     console.warn("[Kings Ranks] Periodic sync failed:", error);
                 });
             }, 30 * 60 * 1000);
