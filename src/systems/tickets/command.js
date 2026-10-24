@@ -25,7 +25,7 @@ const data = new SlashCommandBuilder()
     .setDescription("Publish the ItamaRos Support Center panel")
     .setDMPermission(false)
     .setDefaultMemberPermissions(
-        PermissionFlagsBits.Administrator
+        PermissionFlagsBits.ManageGuild
     );
 
 function buildResponse(title, description, color) {
@@ -140,14 +140,14 @@ async function execute(interaction) {
 
         if (
             !interaction.memberPermissions?.has(
-                PermissionFlagsBits.Administrator
+                PermissionFlagsBits.ManageGuild
             )
         ) {
             await respond(
                 interaction,
                 buildResponse(
-                    "🛡️ Administrator Only",
-                    "Only server administrators can publish the support panel.",
+                    "🛡️ Managers Only",
+                    "Manage Server permission is required to publish the support panel.",
                     COLORS.ERROR
                 )
             );
