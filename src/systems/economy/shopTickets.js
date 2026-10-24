@@ -1,5 +1,5 @@
 "use strict";
-const { ChannelType, PermissionFlagsBits, EmbedBuilder } = require("discord.js");
+const { ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require("discord.js");
 const { getDatabase } = require("../../../database");
 
 async function ensureShopTicket(guild, user, item, checkoutId) {
@@ -54,11 +54,33 @@ async function ensureShopTicket(guild, user, item, checkoutId) {
                 { name: "Status", value: "Awaiting staff delivery" }
             );
         await channel.send({ content: "<@" + user.id + ">",
-            embeds: [embed], allowedMentions: { users: [user.id] } });
+            embeds: [embed],
+            components: [new ActionRowBuilder().addComponents(new ButtonBuilder()
+                .setCustomId("is:delivered:" + channel.id)
+                .setLabel("Mark as Delivered").setStyle(ButtonStyle.Success))],
+            allowedMentions: { users: [user.id] } });
         return channel;
     } catch (error) {
         console.error("[Shop Tickets] Ticket setup failed:", error);
         throw error;
     }
 }
-module.exports = { ensureShopTicket };
+async function markShopDelivered(interaction) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+        await interaction.reply({ content: "❌ Staff only.", flags: MessageFlags.Ephemeral });
+        return;
+    }
+    const order = await getDatabase().collection("shop_delivery_orders").findOne({
+        guildId: interaction.guildId, channelId: interaction.channelId
+    });
+    if (!order) throw new Error("Shop order not found.");
+    await getDatabase().collection("shop_delivery_orders").updateOne({
+        _id: order._id, status: "awaiting_staff"
+    }, { $set: { status: "delivered", deliveredBy: interaction.user.id,
+        deliveredAt: new Date() } });
+    await interaction.update({ components: [] });
+    await interaction.followUp({ content: "✅ External rewards marked as delivered by <@" +
+        interaction.user.id + ">. Staff may now close this ticket.",
+        allowedMentions: { users: [interaction.user.id] } });
+}
+module.exports = { ensureShopTicket, markShopDelivered };
