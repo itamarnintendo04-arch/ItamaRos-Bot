@@ -145,10 +145,10 @@ async function execute(interaction) {
                             interaction.guild, interaction.user,
                             result.item, interaction.id
                         );
-                        response += "\\n🎫 Private delivery ticket: <#" + ticket.id + ">";
+                        response += "\n🎫 Private delivery ticket: <#" + ticket.id + ">";
                     } catch (error) {
                         console.error("[Shop] Paid order ticket failed:", error);
-                        response += "\\n⚠️ Purchase succeeded, but delivery ticket could not be opened. Contact staff.";
+                        response += "\n⚠️ Purchase succeeded, but delivery ticket could not be opened. Contact staff.";
                     }
                 }
                 await notifyItemUsed({
