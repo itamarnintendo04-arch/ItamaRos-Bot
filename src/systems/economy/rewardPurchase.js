@@ -139,6 +139,13 @@ async function purchaseReward(guild, user, itemKey, member, checkoutId) {
                                     ] }
                                 ]
                             },
+                            // Reward XP must not count as chat activity XP.
+                            bonusXpAwarded: {
+                                $add: [
+                                    { $ifNull: ["$bonusXpAwarded", 0] },
+                                    xp
+                                ]
+                            },
                             updatedAt: new Date()
                         }
                     }],
