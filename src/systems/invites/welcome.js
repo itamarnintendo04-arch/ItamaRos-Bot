@@ -68,9 +68,44 @@ async function renderWelcomeImage(member, attribution, inviterName) {
         '</svg>'
     ].join("");
 
-    return sharp(Buffer.from(svg), { limitInputPixels: 3000000 })
-        .png()
-        .toBuffer();
+    const canvas = sharp(Buffer.from(svg), {
+        limitInputPixels: 3000000
+    });
+    // Render the newcomer's actual circular avatar, while retaining
+    // the built-in initial as a graceful offline fallback.
+    try {
+        const avatarUrl = member.displayAvatarURL({
+            extension: "png", size: 256
+        });
+        const response = await fetch(avatarUrl, {
+            signal: AbortSignal.timeout(8000)
+        });
+        if (!response.ok) throw new Error("Avatar unavailable.");
+
+        const raw = Buffer.from(await response.arrayBuffer());
+        if (raw.length < 10 || raw.length > 4 * 1024 * 1024) {
+            throw new Error("Avatar size outside safe limits.");
+        }
+
+        const circle = Buffer.from(
+            '<svg width="126" height="126" xmlns="http://www.w3.org/2000/svg">' +
+            '<circle cx="63" cy="63" r="63" fill="#fff"/></svg>'
+        );
+        const roundedAvatar = await sharp(raw)
+            .resize(126, 126, { fit: "cover" })
+            .composite([{ input: circle, blend: "dest-in" }])
+            .png().toBuffer();
+
+        return canvas.composite([{
+            input: roundedAvatar, left: 42, top: 170
+        }]).png().toBuffer();
+    } catch (error) {
+        console.warn(
+            "[Welcome] Avatar failed; rendered the initial instead:",
+            error.message
+        );
+        return canvas.png().toBuffer();
+    }
 }
 
 async function sendWelcome(member, attribution) {
