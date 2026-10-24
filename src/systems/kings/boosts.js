@@ -119,6 +119,7 @@ async function startedBoosting(member, startedAt, options = {}) {
         "[Kings] Boost detected for " + member.id +
         " (Kings granted: " + added + ")."
     );
+    // Rank sync also runs on the member-update event and on startup.
     return { added, permanent: Boolean(previous?.permanentKings) };
 }
 
