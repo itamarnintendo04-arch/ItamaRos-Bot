@@ -249,10 +249,13 @@ async function permissionOverwrites(guild, botId, spec, kingsRole) {
 }
 
 function findByNameUnsafe(channels, spec, guildId) {
-    return Boolean(channels.find(channel =>
-        isCompatible(channel, spec, guildId) &&
-        channel.name.toLowerCase() === spec.name
-    ));
+    for (const channel of channels.values()) {
+        if (isCompatible(channel, spec, guildId) &&
+            channel.name.toLowerCase() === spec.name) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function privateEnough(channel, spec, guild, kingsRole) {
@@ -270,11 +273,14 @@ function privateEnough(channel, spec, guild, kingsRole) {
 }
 
 function findByName(channels, spec, guildId, guild, kingsRole) {
-    return channels.find(channel =>
-        isCompatible(channel, spec, guildId) &&
-        channel.name.toLowerCase() === spec.name &&
-        privateEnough(channel, spec, guild, kingsRole)
-    );
+    for (const channel of channels.values()) {
+        if (isCompatible(channel, spec, guildId) &&
+            channel.name.toLowerCase() === spec.name &&
+            privateEnough(channel, spec, guild, kingsRole)) {
+            return channel;
+        }
+    }
+    return null;
 }
 
 async function resolveOne(guild, channels, spec, kingsRole) {
