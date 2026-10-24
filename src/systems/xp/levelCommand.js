@@ -5,9 +5,7 @@ const {
     MessageFlags
 } = require("discord.js");
 
-const { getProfile, XP_PER_LEVEL, MAX_LEVEL } = require(
-    "./service"
-);
+const { getProfile } = require("./service");
 
 const data = new SlashCommandBuilder()
     .setName("level")
@@ -43,16 +41,17 @@ async function execute(interaction) {
 
     await interaction.reply({
         content: [
-            `⭐ **<@${user.id}>'s level**`,
-            `**Level:** ${profile.level}/${MAX_LEVEL}`,
-            `**Total XP:** ${profile.xp}`,
-            profile.level === MAX_LEVEL
-                ? "🏆 Maximum level reached!"
-                : `**Progress:** ${profile.xpInLevel}/${XP_PER_LEVEL} XP`,
-            profile.level === MAX_LEVEL
-                ? ""
-                : `**XP to next level:** ${profile.xpToNextLevel}`
-        ].filter(Boolean).join("\n"),
+            "⭐ **Level progress**",
+            "**Member:** <@" + user.id + ">",
+            "**Level:** " + profile.level + " (no fixed maximum)",
+            "**Total XP:** " + profile.xp.toLocaleString("en-US"),
+            "**Progress:** " + profile.xpInLevel.toLocaleString("en-US") +
+                "/" + profile.xpRequiredThisLevel.toLocaleString("en-US") + " XP",
+            "**XP to next level:** " +
+                profile.xpToNextLevel.toLocaleString("en-US"),
+            "**Next level at:** " +
+                profile.nextLevelXp.toLocaleString("en-US") + " XP"
+        ].join("\n"),
         allowedMentions: { parse: [] }
     });
 }
