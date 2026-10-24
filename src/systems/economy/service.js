@@ -200,6 +200,13 @@ async function createItem(guildId, info) {
         fail("Role items require a Discord role.");
     }
     const rewards = type === "reward" ? info.rewards : null;
+    const { validateShopRewards } = require("./shopPacks");
+    const validated = type === "reward" ? validateShopRewards({
+        isPack: info.isShopPack === true,
+        xp: rewards?.xp, coins: rewards?.coins,
+        roles: rewards?.roleIds || (rewards?.roleId ? [rewards.roleId] : []),
+        external: info.externalRewards || []
+    }) : null;
     if (type === "reward") {
         if (!rewards || !Number.isSafeInteger(rewards.xp) ||
             rewards.xp < 0 || rewards.xp > 200000 ||
@@ -217,10 +224,13 @@ async function createItem(guildId, info) {
         description: String(info.description || "").slice(0, 500),
         category: String(info.category || "General").slice(0, 40),
         price, type,
+        isShopPack: Boolean(validated?.isPack),
+        externalRewards: validated ? [...validated.external] : [],
         rewards: type === "reward" ? {
             xp: rewards.xp,
             coins: rewards.coins,
-            roleId: rewards.roleId
+            roleId: rewards.roleId,
+            roleIds: [...validated.roles]
         } : null,
         roleId: type === "role" ? info.roleId : null,
         stock: info.stock ?? null,
@@ -243,7 +253,9 @@ async function updateItem(guildId, key, patch) {
 
     // Rewards are immutable once created; legacy product types
     // also cannot be converted into a reward product later.
-    if (Object.prototype.hasOwnProperty.call(patch, "rewards") ||
+    if (Object.prototype.hasOwnProperty.call(patch, "isShopPack") ||
+        Object.prototype.hasOwnProperty.call(patch, "externalRewards") ||
+        Object.prototype.hasOwnProperty.call(patch, "rewards") ||
         (existing.type === "reward" &&
          Object.prototype.hasOwnProperty.call(patch, "type") &&
          patch.type !== "reward") ||
