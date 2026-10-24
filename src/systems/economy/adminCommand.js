@@ -140,7 +140,8 @@ const forbiddenRolePermissions = [
 async function validateRole(guild, role) {
     if (!role) return;
     if (role.id === guild.id || role.managed ||
-        role.name === "Kings" ||
+        role.id === process.env.KINGS_ROLE_ID ||
+        /^kings?(?:[ |:-]*(?:level|lvl|rank|tier)?[ -]*[0-9]+)?$/i.test(role.name) ||
         /^Level [1-3]$/.test(role.name)) {
         throw new Error("This special or managed role cannot be sold.");
     }
