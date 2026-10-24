@@ -12,6 +12,7 @@ const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
 const { statusCard } = require("../media/statusCard");
+const { kingsGiveawayCard } = require("./kingsCard");
 
 const COLORS = Object.freeze({
     CANCELLED: 0xEF4444
@@ -321,16 +322,21 @@ async function disableCancelledGiveaway(client, giveaway) {
         const files = [];
 
         try {
-            const png = await statusCard({
-                kind: "giveaway",
-                status: "cancelled",
-                prize: current.prize,
-                subtitle: "No winner selected"
-            });
-            embed.setImage("attachment://giveaway-cancelled.png");
+            const png = current.kingsOnly
+                ? await kingsGiveawayCard(current.prize, "cancelled")
+                : await statusCard({
+                    kind: "giveaway",
+                    status: "cancelled",
+                    prize: current.prize,
+                    subtitle: "No winner selected"
+                });
+            const bannerName = current.kingsOnly
+                ? "kings-giveaway-cancelled.png"
+                : "giveaway-cancelled.png";
+            embed.setImage("attachment://" + bannerName);
             files.push(
                 new AttachmentBuilder(png, {
-                    name: "giveaway-cancelled.png"
+                    name: bannerName
                 })
             );
         } catch (imageError) {
