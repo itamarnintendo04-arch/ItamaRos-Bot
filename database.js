@@ -27,6 +27,13 @@ async function connectDatabase() {
     return database;
 }
 
+function getMongoClient() {
+    if (!client) {
+        throw new Error("MongoDB has not been connected yet.");
+    }
+    return client;
+}
+
 function getDatabase() {
     if (!database) {
         throw new Error(
@@ -51,5 +58,6 @@ async function disconnectDatabase() {
 module.exports = {
     connectDatabase,
     getDatabase,
+    getMongoClient,
     disconnectDatabase
 };

@@ -1,6 +1,6 @@
 "use strict";
 
-const { getDatabase } = require("../../../database");
+const { getDatabase, getMongoClient } = require("../../../database");
 
 const MAX_AMOUNT = 1000000000;
 const MAX_BALANCE = 1000000000000;
@@ -37,6 +37,7 @@ async function setupAccount(guildId, userId, session) {
         $setOnInsert: {
             guildId, userId, cash: 0, bank: 0,
             dailyAt: new Date(0), workAt: new Date(0),
+            stealAt: new Date(0), playAt: new Date(0),
             createdAt: new Date()
         }
     }, { upsert: true, session });
@@ -56,7 +57,7 @@ async function getSettings(guildId) {
 }
 
 async function inTransaction(work) {
-    const session = database().client.startSession();
+    const session = getMongoClient().startSession();
     try {
         return await session.withTransaction(() => work(session));
     } finally {
@@ -376,6 +377,121 @@ async function redeemRole(guildId, userId, itemKey, member) {
     return item;
 }
 
+
+const STEAL_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const GAME_COOLDOWN_MS = 10 * 60 * 1000;
+
+async function stealCoins(guildId, thiefId, victimId) {
+    if (thiefId === victimId) fail("You cannot steal from yourself.");
+    return inTransaction(async session => {
+        await setupAccount(guildId, thiefId, session);
+        await setupAccount(guildId, victimId, session);
+        const now = new Date();
+        const validSince = new Date(now.getTime() - STEAL_COOLDOWN_MS);
+        const thief = await accounts().findOne(
+            { _id: id(guildId, thiefId) }, { session }
+        );
+        const victim = await accounts().findOne(
+            { _id: id(guildId, victimId) }, { session }
+        );
+        if (new Date(thief.stealAt || 0) > validSince) {
+            const next = Math.floor(
+                (new Date(thief.stealAt).getTime() +
+                 STEAL_COOLDOWN_MS) / 1000
+            );
+            fail("Try again <t:" + next + ":R>.");
+        }
+        const eligible = Math.max(0, Math.floor(victim.cash || 0));
+        if (!eligible) fail("This member has no wallet coins.");
+        const max = Math.min(100, eligible, Math.max(1, Math.floor(eligible * 0.2)));
+        const n = 1 + Math.floor(Math.random() * max);
+        const cooldown = await accounts().updateOne({
+            _id: id(guildId, thiefId),
+            $or: [
+                { stealAt: { $lte: validSince } },
+                { stealAt: { $exists: false } }
+            ],
+            cash: { $lte: MAX_BALANCE - n }
+        }, {
+            $set: { stealAt: now },
+            $inc: { cash: n }
+        }, { session });
+        if (!cooldown.modifiedCount) fail("You are on cooldown or your wallet is full.");
+        const removed = await accounts().updateOne({
+            _id: id(guildId, victimId),
+            cash: { $gte: n }
+        }, { $inc: { cash: -n } }, { session });
+        if (!removed.modifiedCount) fail("Target balance changed. Try again later.");
+        await log(session, guildId, "steal", thiefId, victimId, n);
+        return n;
+    });
+}
+
+async function playGame(guildId, userId, answer) {
+    if (!["1","2","3"].includes(answer)) fail("Answer must be 1, 2, or 3.");
+    // Simple knowledge quiz, no currency is put at risk.
+    const questions = [
+        { question: "How many sides does a hexagon have?", correct: "2",
+          choices: ["1. Five", "2. Six", "3. Seven"] },
+        { question: "Which planet is known as the Red Planet?", correct: "3",
+          choices: ["1. Venus", "2. Jupiter", "3. Mars"] },
+        { question: "How many bits are in a byte?", correct: "1",
+          choices: ["1. Eight", "2. Four", "3. Twelve"] },
+        { question: "Which is the largest planet?", correct: "2",
+          choices: ["1. Earth", "2. Jupiter", "3. Neptune"] }
+    ];
+    // Each user receives a stable question for each 10-minute
+    // period; the correct answer is never accepted twice.
+    const slot = Math.floor(Date.now() / GAME_COOLDOWN_MS);
+    const index = Math.abs(
+        Array.from(userId + ":" + slot).reduce((x,ch) =>
+            (Math.imul(x, 31) + ch.charCodeAt(0)) | 0, 0)
+    ) % questions.length;
+    const challenge = questions[index];
+    return inTransaction(async session => {
+        await setupAccount(guildId, userId, session);
+        const now = new Date();
+        const since = new Date(now.getTime() - GAME_COOLDOWN_MS);
+        const isCorrect = answer === challenge.correct;
+        const reward = isCorrect ? 50 : 0;
+        const claim = await accounts().updateOne({
+            _id: id(guildId, userId),
+            $or: [
+                { playAt: { $lte: since } },
+                { playAt: { $exists: false } }
+            ],
+            cash: { $lte: MAX_BALANCE - reward }
+        }, {
+            $set: { playAt: now },
+            $inc: { cash: reward }
+        }, { session });
+        if (!claim.modifiedCount) fail("Wait 10 minutes between games.");
+        await log(session, guildId, "game", userId, null, reward, {
+            answer, correct: isCorrect
+        });
+        return { ...challenge, isCorrect, reward };
+    });
+}
+
+function getGameQuestion(userId) {
+    const slot = Math.floor(Date.now() / GAME_COOLDOWN_MS);
+    const questions = [
+        { question: "How many sides does a hexagon have?",
+          choices: ["1. Five", "2. Six", "3. Seven"] },
+        { question: "Which planet is known as the Red Planet?",
+          choices: ["1. Venus", "2. Jupiter", "3. Mars"] },
+        { question: "How many bits are in a byte?",
+          choices: ["1. Eight", "2. Four", "3. Twelve"] },
+        { question: "Which is the largest planet?",
+          choices: ["1. Earth", "2. Jupiter", "3. Neptune"] }
+    ];
+    const idx = Math.abs(
+        Array.from(userId + ":" + slot).reduce((x,ch) =>
+            (Math.imul(x, 31) + ch.charCodeAt(0)) | 0, 0)
+    ) % questions.length;
+    return questions[idx];
+}
+
 async function top(guildId) {
     return accounts().aggregate([
         { $match: { guildId } },
@@ -390,5 +506,6 @@ module.exports = {
     slug, id, itemId, accounts, catalog, inventory, journal,
     getAccount, getSettings, getItem, getInventory, listItems,
     moveMoney, pay, earn, adjustMoney, setSetting,
-    createItem, buy, sell, useItem, redeemRole, top
+    createItem, buy, sell, useItem, redeemRole, top,
+    stealCoins, playGame, getGameQuestion
 };
