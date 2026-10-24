@@ -11,10 +11,10 @@ booster/permanent-membership rules allow it.
 | Kings rank | Minimum activity XP | Category | Channels |
 | --- | ---: | --- | --- |
 | Level 1 | 0 | 👑 KINGS | lounge, news, help |
-| Level 2 | 200 | 👑 KINGS • LEVEL 2 | strategy-lv2, events-lv2, giveaways-lv2 |
-| Level 3 | 450 | 👑 KINGS • LEVEL 3 | drops-lv3, edits-lv3, requests-lv3 |
-| Level 4 | 750 | 👑 KINGS • LEVEL 4 | shop-lv4, royal-events-lv4, rewards-lv4 |
-| Level 5 | 1,100 | 👑 KINGS • LEVEL 5 | royal-lounge-lv5, premium-events-lv5, vip-perks-lv5 |
+| Level 2 | 50 | 👑 KINGS • LEVEL 2 | strategy-lv2, events-lv2, giveaways-lv2 |
+| Level 3 | 100 | 👑 KINGS • LEVEL 3 | drops-lv3, edits-lv3, requests-lv3 |
+| Level 4 | 150 | 👑 KINGS • LEVEL 4 | shop-lv4, royal-events-lv4, rewards-lv4 |
+| Level 5 | 250 | 👑 KINGS • LEVEL 5 | royal-lounge-lv5, premium-events-lv5, vip-perks-lv5 |
 
 Activity XP is stored in `member_xp.activityXp`. Extra XP granted by
 level-milestone rewards does not advance Kings tier. Staff XP edits update
