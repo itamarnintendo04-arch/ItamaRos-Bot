@@ -3,6 +3,7 @@
 const { getDatabase, getMongoClient } = require("../../../database");
 const eco = require("./service");
 const { MAX_XP } = require("../xp/service");
+const { assertCanAccess } = require("./kingsAccess");
 
 function fail(message) {
     throw new Error(message);
@@ -53,6 +54,7 @@ async function purchaseReward(guild, user, itemKey, member, checkoutId) {
     if (!item || !item.enabled || item.type !== "reward") {
         fail("This instant reward is no longer for sale.");
     }
+    await assertCanAccess(guild, userId, item);
     const reward = item.rewards;
     if (!reward) fail("This reward product is not configured.");
 
@@ -193,6 +195,7 @@ async function purchaseReward(guild, user, itemKey, member, checkoutId) {
 async function buyProduct(guild, user, key, quantity, checkoutId) {
     const item = await eco.getItem(guild.id, key);
     if (!item) fail("Product not found.");
+    await assertCanAccess(guild, user.id, item);
     if (item.type !== "reward") {
         return eco.buy(guild.id, user.id, key, quantity);
     }
