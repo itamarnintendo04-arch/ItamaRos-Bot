@@ -79,7 +79,10 @@ data.addSubcommand(s => addProperties(
     .setMinValue(0).setMaxValue(200000).setRequired(false))
 .addIntegerOption(o => o.setName("reward_coins")
     .setDescription("Instant coins after purchase (0 = none; locked)")
-    .setMinValue(0).setMaxValue(eco.MAX_AMOUNT).setRequired(false)));
+    .setMinValue(0).setMaxValue(eco.MAX_AMOUNT).setRequired(false))
+.addBooleanOption(o => o.setName("shop_pack").setDescription("Enable multiple rewards in this Shop Pack").setRequired(false))
+.addStringOption(o => o.setName("external_rewards").setDescription("External prizes separated by | (max 10)").setMaxLength(1500).setRequired(false))
+.addStringOption(o => o.setName("extra_roles").setDescription("Extra role IDs separated by commas (Shop Packs only)").setMaxLength(250).setRequired(false)));
 
 data.addSubcommand(s => addProperties(
     s.setName("update").setDescription("Edit an existing product")
@@ -173,21 +176,32 @@ function getProperties(options, isCreate) {
         props.name = options.getString("name", true);
         props.price = options.getInteger("price", true);
         props.type = options.getString("type", true);
+        const externalRaw = options.getString("external_rewards") || "";
+        const extraRaw = options.getString("extra_roles") || "";
+        const isPack = options.getBoolean("shop_pack") === true;
+        const hasNewRewards = Boolean(externalRaw || extraRaw || isPack);
+        if (hasNewRewards && props.type !== "reward") {
+            throw new Error("Shop Packs and external rewards require Instant reward type.");
+        }
         if (props.type === "reward") {
-            props.rewards = {
-                xp: options.getInteger("reward_xp") ?? 0,
+            const { validateShopRewards } = require("./shopPacks");
+            const roles = [role?.id, ...extraRaw.split(",").map(x => x.trim())].filter(Boolean);
+            const external = externalRaw.split("|").map(x => x.trim()).filter(Boolean);
+            const checked = validateShopRewards({
+                isPack, xp: options.getInteger("reward_xp") ?? 0,
                 coins: options.getInteger("reward_coins") ?? 0,
-                roleId: role?.id || null
+                roles, external
+            });
+            props.isShopPack = checked.isPack;
+            props.externalRewards = [...checked.external];
+            props.rewards = {
+                xp: checked.xp, coins: checked.coins,
+                roleId: checked.roles[0] || null,
+                roleIds: [...checked.roles]
             };
-            if (!props.rewards.xp && !props.rewards.coins &&
-                !props.rewards.roleId) {
-                throw new Error(
-                    "Choose XP, coins, a role, or any combination."
-                );
-            }
         } else if (options.getInteger("reward_xp") ||
                    options.getInteger("reward_coins")) {
-            throw new Error("XP and coin rewards require type Instant reward.");
+            throw new Error("XP and coin rewards require Instant reward type.");
         }
     }
     return { props, role };
@@ -217,6 +231,11 @@ async function execute(interaction) {
                 interaction.options, create
             );
             if (role) await validateRole(guild, role);
+            if (create && props.rewards?.roleIds) {
+                for (const id of props.rewards.roleIds) {
+                    await validateRole(guild, await guild.roles.fetch(id));
+                }
+            }
 
             const image = interaction.options.getAttachment("image");
             const clearImage = !create &&
