@@ -73,6 +73,8 @@ const tomorrowQuizCommand = require(
   "./systems/dailyQuestion/tomorrowCommand"
 );
 
+const youtubeCommand = require("./systems/youtube/command");
+
 // ==========================================
 // IMPORT INTERACTION HANDLERS
 // ==========================================
@@ -157,7 +159,8 @@ const commandModules = [
   giveawayTicketCommand,
   levelCommand,
   xpCommand,
-  tomorrowQuizCommand
+  tomorrowQuizCommand,
+  youtubeCommand
 ];
 
 for (const command of commandModules) {

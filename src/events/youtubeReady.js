@@ -1,21 +1,14 @@
 "use strict";
 
 const { Events } = require("discord.js");
-const {
-  startYouTubeUpdates
-} = require("../systems/youtube/updates");
+const { start } = require("../systems/youtube/watcher");
 
-// Automatically starts after the bot connects to Discord.
-// No extra slash commands or gateway intents required.
 module.exports = {
-  name: Events.ClientReady,
-  once: true,
-
-  async execute(client) {
-    try {
-      startYouTubeUpdates(client);
-    } catch (error) {
-      console.error("[YouTube] Startup failed:", error);
+    name: Events.ClientReady,
+    once: true,
+    async execute(client) {
+        // Auto-resume every configured YouTube subscription after Render restarts.
+        start(client);
+        console.log("[YouTube] Automatic watcher initialized.");
     }
-  }
 };
