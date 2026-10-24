@@ -15,6 +15,7 @@ const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
 const { statusCard } = require("../media/statusCard");
+const { kingsGiveawayCard } = require("./kingsCard");
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -101,7 +102,7 @@ function buildResultsEmbed(giveaway, winners) {
                 ? COLORS.ENDED
                 : COLORS.EMPTY
         )
-        .setTitle("🏁 GIVEAWAY ENDED")
+        .setTitle(giveaway.kingsOnly ? "👑 KINGS GIVEAWAY ENDED" : "🏁 GIVEAWAY ENDED")
         .setDescription([
             `## 🎁 ${safePrize(giveaway.prize)}`,
             "",
@@ -152,7 +153,7 @@ function buildAnnouncementEmbed(giveaway, winners) {
 
     return new EmbedBuilder()
         .setColor(COLORS.SUCCESS)
-        .setTitle("🏆 GIVEAWAY WINNERS!")
+        .setTitle(giveaway.kingsOnly ? "👑 ROYAL KINGS WINNERS!" : "🏆 GIVEAWAY WINNERS!")
         .setDescription([
             "## 🎉 Congratulations!",
             "",
@@ -268,18 +269,22 @@ async function editOriginalMessage(
         const files = [];
 
         try {
-            const banner = await statusCard({
-                kind: "giveaway",
-                status: "ended",
-                prize: giveaway.prize,
-                subtitle: winners.length
-                    ? winners.length + " winner(s) selected!"
-                    : "No eligible winners"
-            });
-            embed.setImage("attachment://giveaway-ended.png");
+            const banner = giveaway.kingsOnly
+                ? await kingsGiveawayCard(giveaway.prize, "ended")
+                : await statusCard({
+                    kind: "giveaway",
+                    status: "ended",
+                    prize: giveaway.prize,
+                    subtitle: winners.length
+                        ? winners.length + " winner(s) selected!"
+                        : "No eligible winners"
+                });
+            const bannerName = giveaway.kingsOnly
+                ? "kings-giveaway-ended.png" : "giveaway-ended.png";
+            embed.setImage("attachment://" + bannerName);
             files.push(
                 new AttachmentBuilder(banner, {
-                    name: "giveaway-ended.png"
+                    name: bannerName
                 })
             );
         } catch (imageError) {
