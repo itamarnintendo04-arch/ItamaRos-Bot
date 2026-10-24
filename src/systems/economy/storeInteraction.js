@@ -64,7 +64,7 @@ async function productDetails(guildId, item) {
         .setFooter({ text: "Item ID: " + item.key });
     if (item.type === "reward") {
         embed.addFields({
-            name: "🎁 Instant delivery after payment",
+            name: item.externalRewards?.length ? "🎁 Rewards and staff delivery" : "🎁 Instant delivery after payment",
             value: rewardSummary(item),
             inline: false
         });
@@ -278,6 +278,7 @@ async function useProduct(interaction, key) {
 async function openBuyConfirmation(interaction, item) {
     const cfg = await economy.getSettings(interaction.guildId);
     const isInstant = item.type === "reward";
+    const hasExternal = Boolean(item.externalRewards?.length);
     const embed = new EmbedBuilder()
         .setColor(0x8B5CF6)
         .setTitle("🛒 Confirm your purchase")
@@ -287,7 +288,7 @@ async function openBuyConfirmation(interaction, item) {
             "**Price:** " + number(item.price) + " " +
                 clean(cfg.currency, 12),
             isInstant
-                ? "🎁 **This purchase delivers immediately:**"
+                ? (hasExternal ? "🎁 **Automatic rewards are immediate; external rewards are delivered by staff in a private ticket:**" : "🎁 **This purchase delivers immediately:**")
                 : "📦 This item will be added to your inventory.",
             isInstant ? rewardSummary(item) : "",
             "",
@@ -338,13 +339,24 @@ async function confirmBuy(interaction, key, expectedPrice) {
         guild: interaction.guild,
         user: interaction.user,
         item: purchase.item,
-        action: "Instant rewards delivered"
-    });
+        action: "Shop purchase completed"
+    }).catch(error => console.warn("[Shop] Notification failed:", error));
+    let ticketMessage = "";
+    if (item.externalRewards?.length) {
+        try {
+            const { ensureShopTicket } = require("./shopTickets");
+            const ticket = await ensureShopTicket(interaction.guild, interaction.user, item, interaction.message.id);
+            ticketMessage = "\\n🎫 Your private delivery ticket: <#" + ticket.id + ">";
+        } catch (error) {
+            console.error("[Shop] Paid order needs staff attention:", error);
+            ticketMessage = "\\n⚠️ Payment succeeded, but ticket creation failed. Contact staff with your purchase details.";
+        }
+    }
     await interaction.editReply({
         content: "✅ **Purchase complete!**\n" +
             "🛍️ **" + clean(item.name) + "** — " +
             number(purchase.cost) + " coins\n" +
-            "🎁 **Delivered immediately:** " + rewardSummary(item),
+            "🎁 **Your rewards:** " + rewardSummary(item) + ticketMessage,
         embeds: [],
         components: [],
         allowedMentions: { parse: [] }
