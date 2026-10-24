@@ -1,43 +1,86 @@
-# Progressive XP — ItamaRos Bot
+# ItamaRos Bot: MongoDB-backed, progressive XP and chat rewards
 
-XP levels have **no configured maximum level**. There is only the
-technical limit of JavaScript safe integer storage (9,007,199,254,740,991 XP).
+The XP system is **unlimited in gameplay levels**. XP and activity records
+are stored in MongoDB, never in an in-memory map or local JSON file.
+There is only a JavaScript/Mongo numeric precision boundary
+(`Number.MAX_SAFE_INTEGER`), not a configured rank cap.
 
-## XP required for each next level
+## Level requirements
 
-The first level costs 200 XP. The next level costs 250 XP,
-then 300 XP, 350 XP, and so forth, increasing by 50 XP every time.
+The first three levels cost **50 XP per level**. The requirement then
+increases by **50 XP** in stages:
 
-`xpNeededForNextLevel = 200 + 50 * currentLevel`
+- **Levels 1–15:** every 3 levels the XP price rises by 50.
+- **Levels 16–30:** every 2 levels the XP price rises by 50.
+- **Levels 31 onward:** every single level adds another 50 XP.
 
-`totalXpForLevel(L) = 200 * L + 25 * L * (L - 1)`
+These stages are continuous. Progression never resets at a stage boundary.
 
-| New level | Additional XP | Total XP needed |
+| New XP level | Added XP | Total XP |
 | --- | ---: | ---: |
-| 1 | 200 | 200 |
-| 2 | 250 | 450 |
-| 3 | 300 | 750 |
-| 4 | 350 | 1,100 |
-| 5 | 400 | 1,500 |
-| 6 | 450 | 1,950 |
-| 10 | 650 | 4,250 |
-| 20 | 1,150 | 13,500 |
-| 50 | 2,650 | 71,250 |
-| 100 | 5,150 | 267,500 |
+| 1 | 50 | 50 |
+| 2 | 50 | 100 |
+| 3 | 50 | 150 |
+| 4 | 100 | 250 |
+| 5 | 100 | 350 |
+| 6 | 100 | 450 |
+| 7 | 150 | 600 |
+| 9 | 150 | 900 |
+| 10 | 200 | 1,100 |
+| 15 | 250 | 2,250 |
+| 16 | 300 | 2,550 |
+| 17 | 300 | 2,850 |
+| 18 | 350 | 3,200 |
+| 30 | 650 | 9,200 |
+| 31 | 700 | 9,900 |
+| 32 | 750 | 10,650 |
 
-Player profiles and existing XP balances are **not erased or reset**.
-After deployment the player's displayed level will be recalculated
-using the new progression, which can be lower than under the old
-200-XP-per-level system even though their XP stays unchanged.
+`src/systems/xp/progression.js` is the single source of truth for
+the maths. `/level`, `/xp-leaderboard`, role milestones, Kings
+rank checks and minimum-level giveaway eligibility read the same
+progressive level formula.
 
-`/level` displays the current level, XP into the current level,
-the XP needed to advance, and the total XP needed for the next level.
+## Increasing chat-activity rewards
 
-`/xp-leaderboard` uses the same calculation. Staff `/xp` commands
-and giveaways support level requirements beyond 1,000.
+Every eligible message earns progressively more XP:
 
-**Kings roles remain capped at five tiers by design.** Their activity
-XP thresholds follow the first four new level milestones:
-Kings 1 at 0, Kings 2 at 200, Kings 3 at 450,
-Kings 4 at 750, Kings 5 at 1,100 activity XP.
-Milestone bonus XP does not count towards Kings progression.
+- First eligible message: **5 XP**.
+- Second: **6 XP**.
+- Third: **7 XP**.
+- Each new eligible message increases the award by **1 XP**.
+
+Spam safeguards: **60-second cooldown**, minimum message length,
+blocked-word validation, ignore bots/webhooks, and reject an
+immediately repeated message after normalization. Rewards depend
+only on *eligible* messages, not messages spammed during cooldown.
+
+The MongoDB `member_xp` collection stores per-guild/member:
+
+- `xp`: total XP (never reset during this migration).
+- `activityXp`: earned activity XP (used for rank milestone checks).
+- `bonusXpAwarded`: extra XP from milestone/shop rewards; does
+  not advance activity-only tiers.
+- `messageXpAwards`: count of eligible, XP-awarded chat messages.
+- `lastMessageXp`: amount granted by the latest eligible message.
+- `lastMessageXpAt`: date of the last grant.
+- `lastXpMessageHash`: a hash of the last credited message to
+  detect exact repeats without storing its text.
+
+Each successful message grant atomically updates its XP and activity
+counter in a MongoDB update pipeline. Stats survive Render restarts.
+Existing users keep their accumulated XP, though their *displayed*
+XP level is recalculated using the newer threshold formula.
+Users whose old profiles lack `messageXpAwards` start the new growing
+chat-award counter at zero (existing XP is preserved).
+
+## Kings compatibility
+
+Kings role progression remains a separate set of **five** roles
+and categories. They correspond to first four activity-level
+milestones: 0 / 50 / 100 / 150 / 250 activity XP. Kings Level 5
+is the maximum Kings *rank*, not the maximum regular XP level.
+
+## Testing
+
+Run `npm test` (Node 22+) to verify boundary values, stage
+transitions, unlimited levels and chat reward calculations.
