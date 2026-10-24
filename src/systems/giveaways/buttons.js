@@ -4,7 +4,8 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    MessageFlags
+    MessageFlags,
+    PermissionFlagsBits
 } = require("discord.js");
 
 const { ObjectId } = require("mongodb");
@@ -418,7 +419,10 @@ async function handleGiveawayButtons(interaction) {
                 /^kings?(?:[ |:-]*(?:level|lvl|rank|tier)?[ -]*[0-9]+)?$/i
                     .test(role.name)
             ));
-            if (!hasKings) {
+            const staff = Boolean(member?.permissions.has(
+                PermissionFlagsBits.ManageGuild
+            ) || member?.permissions.has(PermissionFlagsBits.Administrator));
+            if (!hasKings && !staff) {
                 await interaction.editReply({
                     embeds: [createResponse(
                         "👑 Kings Rank Required",
