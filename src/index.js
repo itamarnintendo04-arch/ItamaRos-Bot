@@ -27,6 +27,8 @@ const { connectDatabase } = require("../database");
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildInvites,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent
@@ -69,6 +71,7 @@ const giveawayTicketCommand = require(
 
 const levelCommand = require("./systems/xp/levelCommand");
 const xpCommand = require("./systems/xp/xpCommand");
+const invitesCommand = require("./systems/invites/command");
 const tomorrowQuizCommand = require(
   "./systems/dailyQuestion/tomorrowCommand"
 );
@@ -157,7 +160,8 @@ const commandModules = [
   giveawayTicketCommand,
   levelCommand,
   xpCommand,
-  tomorrowQuizCommand
+  tomorrowQuizCommand,
+  invitesCommand
 ];
 
 for (const command of commandModules) {
