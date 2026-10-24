@@ -77,7 +77,8 @@ async function makePublicShop(guildId) {
             ...buyable.slice(i, i + 5).map(item =>
                 new ButtonBuilder()
                     .setCustomId("is:buy:" + item.key)
-                    .setLabel("Buy " + clean(item.name, 55))
+                    .setLabel(clean(item.name, 38) + " • " + format(item.price))
+                    .setEmoji("🪙")
                     .setStyle(ButtonStyle.Success)
             )
         ));
