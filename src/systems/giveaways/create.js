@@ -4,11 +4,13 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    PermissionFlagsBits
+    PermissionFlagsBits,
+    AttachmentBuilder
 } = require("discord.js");
 
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
+const { statusCard } = require("../media/statusCard");
 
 const COLORS = Object.freeze({
     PRIMARY: GIVEAWAY_SETTINGS.DEFAULT_COLOR,
@@ -354,8 +356,23 @@ async function createGiveaway({
             imageUrl
         });
 
+        const files = [];
+        if (!imageUrl) {
+            const banner = await statusCard({
+                kind: "giveaway",
+                status: "active",
+                prize: sanitizedPrize,
+                subtitle: "Enter for a chance to win!"
+            });
+            embed.setImage("attachment://giveaway.png");
+            files.push(
+                new AttachmentBuilder(banner, { name: "giveaway.png" })
+            );
+        }
+
         sentMessage = await channel.send({
             embeds: [embed],
+            files,
             components: [
                 ...createGiveawayButtons(
                     insertedId.toString()

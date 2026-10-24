@@ -5,7 +5,8 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    EmbedBuilder
+    EmbedBuilder,
+    AttachmentBuilder
 } = require("discord.js");
 
 const { randomUUID } = require("node:crypto");
@@ -13,6 +14,7 @@ const { ObjectId } = require("mongodb");
 
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
+const { statusCard } = require("../media/statusCard");
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -262,14 +264,38 @@ async function editOriginalMessage(
             giveaway.messageId
         );
 
+        const embed = buildResultsEmbed(giveaway, winners);
+        const files = [];
+
+        try {
+            const banner = await statusCard({
+                kind: "giveaway",
+                status: "ended",
+                prize: giveaway.prize,
+                subtitle: winners.length
+                    ? winners.length + " winner(s) selected!"
+                    : "No eligible winners"
+            });
+            embed.setImage("attachment://giveaway-ended.png");
+            files.push(
+                new AttachmentBuilder(banner, {
+                    name: "giveaway-ended.png"
+                })
+            );
+        } catch (imageError) {
+            console.warn(
+                "[Giveaways] End banner unavailable:",
+                imageError.message
+            );
+        }
+
         await message.edit({
             content: "🏁 **This giveaway has ended.**",
-            embeds: [
-                buildResultsEmbed(giveaway, winners)
-            ],
+            embeds: [embed],
             components: disabledButtons(
                 giveaway._id.toString()
             ),
+            ...(files.length ? { files, attachments: [] } : {}),
             allowedMentions: {
                 parse: []
             }

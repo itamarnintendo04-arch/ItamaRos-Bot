@@ -3,13 +3,15 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    EmbedBuilder
+    EmbedBuilder,
+    AttachmentBuilder
 } = require("discord.js");
 
 const { ObjectId } = require("mongodb");
 
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
+const { statusCard } = require("../media/statusCard");
 
 const COLORS = Object.freeze({
     CANCELLED: 0xEF4444
@@ -316,6 +318,27 @@ async function disableCancelledGiveaway(client, giveaway) {
         }
 
         const embed = buildCancelledEmbed(current);
+        const files = [];
+
+        try {
+            const png = await statusCard({
+                kind: "giveaway",
+                status: "cancelled",
+                prize: current.prize,
+                subtitle: "No winner selected"
+            });
+            embed.setImage("attachment://giveaway-cancelled.png");
+            files.push(
+                new AttachmentBuilder(png, {
+                    name: "giveaway-cancelled.png"
+                })
+            );
+        } catch (imageError) {
+            console.warn(
+                "[Giveaways] Cancel banner unavailable:",
+                imageError.message
+            );
+        }
 
         // This edits the ORIGINAL giveaway message.
         // No separate winner announcement is created.
@@ -323,6 +346,7 @@ async function disableCancelledGiveaway(client, giveaway) {
             content: "🚫 **This giveaway has been cancelled.**",
             embeds: [embed],
             components: buildDisabledButtons(giveawayId),
+            ...(files.length ? { files, attachments: [] } : {}),
             allowedMentions: {
                 parse: []
             }

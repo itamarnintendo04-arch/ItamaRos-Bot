@@ -3,11 +3,13 @@ const {
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle
+    ButtonStyle,
+    AttachmentBuilder
 } = require("discord.js");
 
 const { getDatabase } = require("../../../database");
 const { DROP_SETTINGS } = require("./config");
+const { statusCard } = require("../media/statusCard");
 
 async function createDrop({
     guild,
@@ -88,9 +90,25 @@ async function createDrop({
     );
 
     try {
+        const files = [];
+        if (!image?.url) {
+            const banner = await statusCard({
+                kind: "drop",
+                status: "active",
+                prize,
+                subtitle: "First to click CLAIM wins!"
+            });
+            embed.setImage("attachment://drop.png");
+            files.push(
+                new AttachmentBuilder(banner, { name: "drop.png" })
+            );
+        }
+
         const message = await channel.send({
             embeds: [embed],
-            components: [row]
+            components: [row],
+            files,
+            allowedMentions: { parse: [] }
         });
 
         await collection.updateOne(

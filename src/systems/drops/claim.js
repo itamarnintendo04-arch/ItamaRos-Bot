@@ -3,12 +3,14 @@ const {
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle
+    ButtonStyle,
+    AttachmentBuilder
 } = require("discord.js");
 
 const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 const { DROP_SETTINGS } = require("./config");
+const { statusCard } = require("../media/statusCard");
 
 async function claimDrop(interaction, dropId) {
     if (!ObjectId.isValid(dropId)) {
@@ -72,6 +74,22 @@ async function claimDrop(interaction, dropId) {
         embed.setImage(drop.imageUrl);
     }
 
+    const files = [];
+    try {
+        const png = await statusCard({
+            kind: "drop",
+            status: "claimed",
+            prize: drop.prize,
+            subtitle: "Winner selected!"
+        });
+        embed.setImage("attachment://drop-claimed.png");
+        files.push(
+            new AttachmentBuilder(png, { name: "drop-claimed.png" })
+        );
+    } catch (error) {
+        console.warn("[Drops] Claimed banner unavailable:", error.message);
+    }
+
     const disabledRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`${DROP_SETTINGS.CLAIM_BUTTON_ID}:${dropId}`)
@@ -83,7 +101,8 @@ async function claimDrop(interaction, dropId) {
 
     await interaction.update({
         embeds: [embed],
-        components: [disabledRow]
+        components: [disabledRow],
+        ...(files.length ? { files, attachments: [] } : {})
     });
 
     return true;
