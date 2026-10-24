@@ -220,7 +220,9 @@ function buildWinnerEmbed(
     const lines = [
         `# 🏆 Congratulations, <@${winnerId}>!`,
         "",
-        "You have won an **ItamaRos Giveaway**!",
+        giveaway.kingsOnly
+            ? "👑 You have won an **exclusive Kings giveaway**!"
+            : "You have won an **ItamaRos Giveaway**!",
         "",
         "Our staff will help you claim your prize.",
         "",
@@ -241,7 +243,9 @@ function buildWinnerEmbed(
 
     const embed = new EmbedBuilder()
         .setColor(COLORS.SUCCESS)
-        .setTitle("🎫 GIVEAWAY WINNER TICKET")
+        .setTitle(giveaway.kingsOnly
+            ? "👑 KINGS GIVEAWAY WINNER TICKET"
+            : "🎫 GIVEAWAY WINNER TICKET")
         .setDescription(lines.join("\n"))
         .addFields(
             {
