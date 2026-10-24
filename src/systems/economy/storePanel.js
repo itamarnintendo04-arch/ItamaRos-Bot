@@ -33,7 +33,8 @@ function num(value) {
 }
 
 async function getCatalog(guildId) {
-    return economy.listItems(guildId);
+    return (await economy.listItems(guildId)).filter(item =>
+        item.kingsOnly !== true);
 }
 
 function storeEmbed(items, symbol) {
