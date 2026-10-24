@@ -223,7 +223,7 @@ async function staffRoleOverwrites(guild) {
     );
     return [...matches.values()].slice(0, 85).map(role => ({
         id: role.id,
-        allow: [P.ViewChannel, P.ReadMessageHistory]
+        allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages]
     }));
 }
 
@@ -259,7 +259,10 @@ async function permissionOverwrites(guild, botId, spec, kingsRole) {
             {
                 id: kingsRole.id,
                 allow: [P.ViewChannel, P.ReadMessageHistory, P.SendMessages]
-            }
+            },
+            ...(await staffRoleOverwrites(guild)).filter(
+                entry => entry.id !== kingsRole.id
+            )
         ];
     }
 
@@ -401,6 +404,26 @@ async function resolveOne(guild, channels, spec, kingsRole) {
         channels.set(channel.id, channel);
         created = true;
         console.log("[Setup] Created #" + spec.name + ": " + channel.id);
+    }
+
+    // Staff must be able to use Kings channels even without the Kings role.
+    // Only add/refresh staff-role overrides; preserve other existing settings.
+    if (spec.policy === "kings" && !created) {
+        const me = await guild.members.fetchMe();
+        if (channel.permissionsFor(me)?.has(P.ManageRoles)) {
+            for (const role of await staffRoleOverwrites(guild)) {
+                if (role.id === kingsRole?.id) continue;
+                await channel.permissionOverwrites.edit(role.id, {
+                    ViewChannel: true,
+                    ReadMessageHistory: true,
+                    SendMessages: true
+                }, { reason: "ItamaRos: staff access to Kings channels" })
+                    .catch(error => console.warn(
+                        "[Setup] Kings staff access failed in " +
+                        channel.name + ": " + error.message
+                    ));
+            }
+        }
     }
 
     // NEVER change existing channel permission overwrites here.
