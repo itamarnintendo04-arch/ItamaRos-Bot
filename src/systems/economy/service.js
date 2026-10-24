@@ -207,6 +207,7 @@ async function createItem(guildId, info) {
         price, type,
         roleId: type === "role" ? info.roleId : null,
         stock: info.stock ?? null,
+        hasImage: false,
         createdAt: new Date(),
         enabled: true
     };
@@ -218,6 +219,78 @@ async function createItem(guildId, info) {
     }
     return document;
 }
+
+async function updateItem(guildId, key, patch) {
+    const existing = await getItem(guildId, key);
+    if (!existing) fail("Item not found.");
+
+    const fields = {};
+    if (Object.prototype.hasOwnProperty.call(patch, "name")) {
+        const name = String(patch.name || "").trim();
+        if (name.length < 2 || name.length > 70) {
+            fail("Name must be between 2 and 70 characters.");
+        }
+        fields.name = name;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "description")) {
+        const description = String(patch.description || "").trim();
+        if (description.length > 500) fail("Description is too long.");
+        fields.description = description;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "category")) {
+        const category = String(patch.category || "").trim();
+        if (!category || category.length > 40) fail("Invalid category.");
+        fields.category = category;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "price")) {
+        const price = amount(patch.price);
+        if (price < 1) fail("Price must be at least 1.");
+        fields.price = price;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "stock")) {
+        if (patch.stock !== null && (
+            !Number.isSafeInteger(patch.stock) ||
+            patch.stock < 0 || patch.stock > MAX_AMOUNT
+        )) fail("Stock must be nonnegative or unlimited.");
+        fields.stock = patch.stock;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "type")) {
+        if (!["collectible", "consumable", "role"].includes(patch.type)) {
+            fail("Unknown item type.");
+        }
+        fields.type = patch.type;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "roleId")) {
+        fields.roleId = patch.roleId;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "enabled")) {
+        if (typeof patch.enabled !== "boolean") fail("Invalid status.");
+        fields.enabled = patch.enabled;
+    }
+
+    const finalType = fields.type ?? existing.type;
+    const finalRole = fields.roleId !== undefined ?
+        fields.roleId : existing.roleId;
+
+    if (finalType === "role" &&
+        !/^\d{17,20}$/.test(finalRole || "")) {
+        fail("Role products require a Discord role.");
+    }
+    if (finalType !== "role") fields.roleId = null;
+
+    if (!Object.keys(fields).length) {
+        fail("Choose at least one product field to update.");
+    }
+
+    fields.updatedAt = new Date();
+    await catalog().updateOne(
+        { _id: existing._id, guildId },
+        { $set: fields }
+    );
+
+    return getItem(guildId, existing.key);
+}
+
 async function listItems(guildId) {
     return catalog().find({ guildId, enabled: true })
         .sort({ category: 1, price: 1 }).limit(100).toArray();
@@ -564,7 +637,7 @@ module.exports = {
     slug, id, itemId, accounts, catalog, inventory, journal,
     getAccount, getSettings, getItem, getInventory, listItems,
     moveMoney, pay, earn, adjustMoney, setSetting,
-    createItem, buy, sell, useItem, redeemRole, top,
+    createItem, updateItem, buy, sell, useItem, redeemRole, top,
     stealCoins, playGame, getGameQuestion,
     getMathQuestion, playMathGame
 };
