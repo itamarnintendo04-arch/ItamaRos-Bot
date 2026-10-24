@@ -75,9 +75,16 @@ async function ensureRankRoles(guild) {
                 reason: "ItamaRos Kings five-level rank system"
             });
         }
-        if (role.permissions.has(P.ManageGuild) ||
-            role.permissions.has(P.Administrator)) {
-            throw new Error("Unsafe permissions on Kings Level " + definition.tier);
+        const forbidden = [
+            P.Administrator, P.ManageGuild, P.ManageRoles,
+            P.ManageChannels, P.ManageMessages, P.ManageWebhooks,
+            P.BanMembers, P.KickMembers, P.ModerateMembers
+        ];
+        if (forbidden.some(permission => role.permissions.has(permission))) {
+            throw new Error(
+                "Kings Level " + definition.tier +
+                " has unsafe privileges; please remove them from this role."
+            );
         }
         if (bot.roles.highest.position <= role.position) {
             throw new Error("Move the bot role above Kings Level " + definition.tier);
