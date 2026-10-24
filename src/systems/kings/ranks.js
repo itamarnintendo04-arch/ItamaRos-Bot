@@ -26,7 +26,7 @@ let infrastructurePromise = null;
 const synchronizing = new Map();
 
 function tierForXp(xp) {
-    return Math.min(MAX_RANK, Math.max(1, 1 + Math.floor(Math.max(0, xp) / 200)));
+    return Math.min(MAX_RANK, Math.max(1, 1 + Math.floor(Math.max(0, xp) / XP_PER_LEVEL)));
 }
 
 function staffRole(role, guild) {
