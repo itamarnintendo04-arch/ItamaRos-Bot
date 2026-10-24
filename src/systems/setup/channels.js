@@ -91,6 +91,45 @@ const SPECIFICATIONS = Object.freeze([
     }
 ]);
 
+const CHANNEL_ALIASES = Object.freeze({
+    welcome: ["welcome", "welcomes", "ברוכים-הבאים"],
+    "ticket-panel": ["support-tickets", "tickets", "ticket", "support",
+        "support-center", "ticket-panel", "ticket-support", "טיקטים", "תמיכה"],
+    giveaways: ["giveaways", "giveaway", "הגרלות", "הגרלה"],
+    drops: ["drops", "drop", "דרופים", "דרופ"],
+    shop: ["shop", "store", "economy-shop", "coin-shop", "coins",
+        "חנות", "חנות-מטבעות"],
+    "daily-question": ["daily-question", "daily-quiz", "question-of-the-day",
+        "שאלת-היום"],
+    "youtube-updates": ["youtube-updates", "youtube-notifications",
+        "youtube-feed", "עדכוני-יוטיוב"],
+    "mod-log": ["mod-log", "mod-logs", "moderation-log",
+        "staff-log", "staff-logs", "לוג-מנהלים"],
+    "kings-welcome": ["kings-welcome", "welcome-kings", "king-welcome",
+        "ברוכים-הבאים-מלכים"],
+    "kings-giveaways": ["kings-giveaways", "king-giveaways", "הגרלות-מלכים"],
+    "kings-drops": ["kings-drops", "king-drops", "דרופים-מלכים"],
+    "kings-shop": ["kings-shop", "king-shop", "חנות-מלכים"],
+    "radio-info": ["radio-info", "radio-chat", "radio-text", "radio-credits"],
+    radio: ["radio", "radio-station", "רדיו"]
+});
+
+function normalizeChannelName(value) {
+    return String(value || "")
+        .normalize("NFKC")
+        .toLowerCase()
+        // Strip emojis/decorations and tolerate bullet separators.
+        .replace(/[^\p{L}\p{N}]+/gu, "-")
+        .replace(/^-+|-+$/g, "");
+}
+
+function channelNames(spec) {
+    return new Set(
+        [spec.name, ...(CHANNEL_ALIASES[spec.key] || [])]
+            .map(normalizeChannelName)
+    );
+}
+
 let bootstrapPromise = null;
 let bootstrapComplete = false;
 
@@ -249,9 +288,10 @@ async function permissionOverwrites(guild, botId, spec, kingsRole) {
 }
 
 function findByNameUnsafe(channels, spec, guildId) {
+    const aliases = channelNames(spec);
     for (const channel of channels.values()) {
         if (isCompatible(channel, spec, guildId) &&
-            channel.name.toLowerCase() === spec.name) {
+            aliases.has(normalizeChannelName(channel.name))) {
             return true;
         }
     }
@@ -272,13 +312,30 @@ function privateEnough(channel, spec, guild, kingsRole) {
     return true;
 }
 
+function matchingChannels(channels, spec, guildId, guild, kingsRole) {
+    const aliases = channelNames(spec);
+    return [...channels.values()].filter(channel =>
+        isCompatible(channel, spec, guildId) &&
+        aliases.has(normalizeChannelName(channel.name)) &&
+        privateEnough(channel, spec, guild, kingsRole)
+    );
+}
+
 function findByName(channels, spec, guildId, guild, kingsRole) {
-    for (const channel of channels.values()) {
-        if (isCompatible(channel, spec, guildId) &&
-            channel.name.toLowerCase() === spec.name &&
-            privateEnough(channel, spec, guild, kingsRole)) {
-            return channel;
-        }
+    const matches = matchingChannels(
+        channels, spec, guildId, guild, kingsRole
+    );
+
+    // Never guess which one is correct when there are duplicates.
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) {
+        console.warn(
+            "[Setup] Multiple existing channels look like " +
+            spec.key + ": " +
+            matches.map(item => item.name + " (" + item.id + ")")
+                .join(", ") +
+            ". Review them manually; no new channel will be created."
+        );
     }
     return null;
 }
@@ -306,6 +363,17 @@ async function resolveOne(guild, channels, spec, kingsRole) {
 
     let created = false;
     if (!channel) {
+        const matches = matchingChannels(
+            channels, spec, guild.id, guild, kingsRole
+        );
+        if (matches.length > 1) {
+            console.warn(
+                "[Setup] Channel " + spec.key +
+                " has ambiguous matches; creation skipped."
+            );
+            return null;
+        }
+
         const me = await guild.members.fetchMe();
         if (!me.permissions.has(P.ManageChannels)) {
             throw new Error(
@@ -401,10 +469,69 @@ async function resolveOne(guild, channels, spec, kingsRole) {
     return channel;
 }
 
+async function restoreKnownChannels(client) {
+    const guildId = process.env.GUILD_ID;
+    const guild = await client.guilds.fetch(guildId);
+    const channels = new Map(await guild.channels.fetch());
+    await guild.roles.fetch();
+
+    const storedRole = await roleRecords().findOne({
+        _id: scopedId(guildId, "kings")
+    });
+    const kingsRole = [
+        process.env.KINGS_ROLE_ID,
+        storedRole?.roleId
+    ]
+        .filter(item => DISCORD_ID.test(String(item || "")))
+        .map(id => guild.roles.cache.get(id))
+        .find(item => roleValid(item, guildId)) ||
+        guild.roles.cache.find(item =>
+            item.name.toLowerCase() === "kings" &&
+            roleValid(item, guildId)
+        ) || null;
+
+    if (kingsRole) process.env.KINGS_ROLE_ID = kingsRole.id;
+
+    const results = {};
+    for (const spec of SPECIFICATIONS) {
+        const stored = await records().findOne({
+            _id: scopedId(guildId, spec.key)
+        });
+        const candidates = [
+            process.env[spec.env || "ITAMAROS_UNUSED_KEY"],
+            ...(spec.aliases || []).map(key => process.env[key]),
+            stored?.channelId
+        ].filter(id => DISCORD_ID.test(String(id || "")));
+
+        let channel = candidates.map(id => channels.get(id))
+            .find(item => isCompatible(item, spec, guildId) &&
+                privateEnough(item, spec, guild, kingsRole));
+
+        if (!channel) {
+            channel = findByName(
+                channels, spec, guildId, guild, kingsRole
+            );
+        }
+        if (!channel) continue;
+
+        results[spec.key] = channel.id;
+        if (spec.env) process.env[spec.env] = channel.id;
+        for (const key of spec.aliases || []) {
+            if (!process.env[key]) process.env[key] = channel.id;
+        }
+    }
+
+    console.log(
+        "[Setup] Creation paused; restored " +
+        Object.keys(results).length +
+        " known system channel IDs without creating anything."
+    );
+    return results;
+}
+
 async function runSetup(client) {
     if (process.env.BOT_AUTO_CHANNELS === "false") {
-        console.log("[Setup] Automatic channels disabled by Render.");
-        return { disabled: true };
+        return restoreKnownChannels(client);
     }
 
     const guildId = process.env.GUILD_ID;
@@ -478,6 +605,8 @@ async function refreshChannels(client) {
 
 module.exports = {
     SPECIFICATIONS,
+    normalizeChannelName,
+    restoreKnownChannels,
     getKingsRole,
     permissionOverwrites,
     resolveOne,
