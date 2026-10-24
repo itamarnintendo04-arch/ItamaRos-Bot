@@ -368,6 +368,11 @@ async function handleStoreInteraction(interaction) {
     if (!id || !id.startsWith(PREFIX)) return false;
 
     try {
+        if (interaction.isButton() && /^is:delivered:\\d+$/.test(id)) {
+            const { markShopDelivered } = require("./shopTickets");
+            await markShopDelivered(interaction);
+            return true;
+        }
         if (!interaction.inGuild() ||
             interaction.guildId !== process.env.GUILD_ID) {
             await interaction.reply(ephemeral(
