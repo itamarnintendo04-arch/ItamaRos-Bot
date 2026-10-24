@@ -63,15 +63,21 @@ function storeEmbed(items, symbol) {
                     " more items in the menu below."
                 : "",
             "",
-            "**HOW TO SHOP**",
-            "Choose a product from the menu below.",
-            "View its details and optional picture.",
-            "Use the buttons to buy, sell or use your items.",
+            "**STORE COMMANDS — AVAILABLE TO EVERYONE**",
+            "🛒 \`/shop\` — open the public shop with Buy buttons.",
+            "🛍️ \`/store buy\` — purchase even if buttons are unavailable.",
+            "📦 \`/store info\` — details and optional product image.",
+            "🎒 \`/store inventory\` — owned items.",
+            "✨ \`/store use\` — use an owned item.",
+            "💰 \`/store bank\` — view bank savings.",
+            "🏆 \`/store leaderboard\` — top coin holders.",
+            "⭐ \`/xp-leaderboard\` — top XP earners.",
+            "🧾 \`/store list\` — all available items.",
             "",
             "💜 All purchases use virtual server coins."
         ].join("\n").slice(0, 3800))
         .setFooter({
-            text: "ItamaRos Bot • Shop with the menu and buttons • No commands needed"
+            text: "ItamaRos Bot • Command guide • Public shop uses /shop"
         })
         .setTimestamp();
 }
@@ -140,7 +146,7 @@ async function makeShopPayload(guildId, page = 0) {
     ]);
     return {
         embeds: [storeEmbed(items, settings.currency)],
-        components: storeComponents(items.slice(0, MAX_ITEMS), page),
+        components: [],
         allowedMentions: { parse: [] }
     };
 }
@@ -185,7 +191,7 @@ async function updateStorePanel(guild) {
         if (previous?.author?.id === bot.id) {
             await previous.edit(payload);
             console.log(
-                "[Item Store] Refreshed interactive shop panel in " +
+                "[Item Store] Refreshed command-only shop panel in " +
                 channel.name
             );
             return true;
@@ -203,7 +209,7 @@ async function updateStorePanel(guild) {
     }, { upsert: true });
 
     console.log(
-        "[Item Store] Posted interactive shop panel to #" +
+        "[Item Store] Posted command-only shop panel to #" +
         channel.name + " (" + channel.id + ")."
     );
     return true;
