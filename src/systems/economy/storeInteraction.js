@@ -11,6 +11,7 @@ const {
     MessageFlags
 } = require("discord.js");
 const economy = require("./service");
+const { buyProduct, rewardSummary } = require("./rewardPurchase");
 const { notifyItemUsed } = require("./useNotifications");
 const images = require("./itemImages");
 const {
@@ -61,6 +62,13 @@ async function productDetails(guildId, item) {
                 inline: true }
         )
         .setFooter({ text: "Item ID: " + item.key });
+    if (item.type === "reward") {
+        embed.addFields({
+            name: "🎁 Instant delivery after payment",
+            value: rewardSummary(item),
+            inline: false
+        });
+    }
 
     const payload = {
         embeds: [embed],
@@ -81,7 +89,10 @@ async function productDetails(guildId, item) {
                     .setCustomId("is:use:" + item.key)
                     .setLabel("Use item")
                     .setStyle(ButtonStyle.Primary)
-                    .setDisabled(item.type === "collectible")
+                    .setDisabled(
+                        item.type === "collectible" ||
+                        item.type === "reward"
+                    )
             )
         ],
         flags: MessageFlags.Ephemeral,
@@ -182,15 +193,27 @@ async function processCheckout(interaction, mode, key) {
 
     let message = "";
     if (mode === "buy") {
-        const purchase = await economy.buy(
-            interaction.guildId, interaction.user.id,
-            key, quantity
+        const purchase = await buyProduct(
+            interaction.guild, interaction.user, key, quantity
         );
         message = "✅ Bought **" + quantity +
             " × " + clean(purchase.item.name) +
             "** for **" + number(purchase.cost) +
-            "** virtual coins.\nOpen My inventory in the store to view it.";
+            "** virtual coins.\n" + (purchase.instant
+                ? "🎁 Delivered immediately: " + rewardSummary(purchase.item)
+                : "Open My inventory in the store to view it.");
+        if (purchase.instant) {
+            await notifyItemUsed({
+                guild: interaction.guild,
+                user: interaction.user,
+                item: purchase.item,
+                action: "Instant rewards delivered"
+            });
+        }
     } else {
+        if (item.type === "reward") {
+            throw new Error("Instant rewards cannot be sold back.");
+        }
         const sale = await economy.sell(
             interaction.guildId, interaction.user.id,
             key, quantity
@@ -220,6 +243,9 @@ async function useProduct(interaction, key) {
     const item = await economy.getItem(interaction.guildId, key);
     if (!item) throw new Error("Item not found.");
 
+    if (item.type === "reward") {
+        throw new Error("This reward was already delivered at purchase.");
+    }
     if (item.type === "role") {
         const member = await interaction.guild.members.fetch(
             interaction.user.id
@@ -245,6 +271,81 @@ async function useProduct(interaction, key) {
     await interaction.editReply({
         content: "✨ You used **" + clean(item.name) +
             "**! A notification was sent to server staff.",
+        allowedMentions: { parse: [] }
+    });
+}
+
+async function openBuyConfirmation(interaction, item) {
+    const cfg = await economy.getSettings(interaction.guildId);
+    const isInstant = item.type === "reward";
+    const embed = new EmbedBuilder()
+        .setColor(0x8B5CF6)
+        .setTitle("🛒 Confirm your purchase")
+        .setDescription([
+            "**" + clean(item.name, 70) + "**",
+            "",
+            "**Price:** " + number(item.price) + " " +
+                clean(cfg.currency, 12),
+            isInstant
+                ? "🎁 **This purchase delivers immediately:**"
+                : "📦 This item will be added to your inventory.",
+            isInstant ? rewardSummary(item) : "",
+            "",
+            isInstant
+                ? "You do NOT need to use this item afterward."
+                : "Choose the quantity after confirming.",
+            "Do you want to buy it?"
+        ].filter(Boolean).join("\n"));
+
+    await interaction.reply({
+        embeds: [embed],
+        components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId("is:confirm:" + item.key + ":" + item.price)
+                .setLabel("Buy")
+                .setEmoji("🛍️")
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId("is:decline:" + item.key)
+                .setLabel("No thanks")
+                .setStyle(ButtonStyle.Secondary)
+        )],
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] }
+    });
+}
+
+async function confirmBuy(interaction, key, expectedPrice) {
+    const item = await economy.getItem(interaction.guildId, key);
+    if (!item || !item.enabled || item.stock === 0) {
+        throw new Error("This product is no longer available.");
+    }
+    if (item.price !== expectedPrice) {
+        throw new Error(
+            "The price has changed. Please open the shop again."
+        );
+    }
+    if (item.type !== "reward") {
+        return openQuantityModal(interaction, "buy", key);
+    }
+
+    await interaction.deferUpdate();
+    const purchase = await buyProduct(
+        interaction.guild, interaction.user, key, 1
+    );
+    await notifyItemUsed({
+        guild: interaction.guild,
+        user: interaction.user,
+        item: purchase.item,
+        action: "Instant rewards delivered"
+    });
+    await interaction.editReply({
+        content: "✅ **Purchase complete!**\n" +
+            "🛍️ **" + clean(item.name) + "** — " +
+            number(purchase.cost) + " coins\n" +
+            "🎁 **Delivered immediately:** " + rewardSummary(item),
+        embeds: [],
+        components: [],
         allowedMentions: { parse: [] }
     });
 }
@@ -312,6 +413,27 @@ async function handleStoreInteraction(interaction) {
             return true;
         }
 
+        const confirmation = id.match(
+            /^is:confirm:([a-z0-9_-]{2,45}):(\d{1,10})$/
+        );
+        if (interaction.isButton() && confirmation) {
+            await confirmBuy(
+                interaction, confirmation[1], Number(confirmation[2])
+            );
+            return true;
+        }
+
+        if (interaction.isButton() &&
+            /^is:decline:[a-z0-9_-]{2,45}$/.test(id)) {
+            await interaction.update({
+                content: "👌 Purchase cancelled. No coins were spent.",
+                embeds: [],
+                components: [],
+                allowedMentions: { parse: [] }
+            });
+            return true;
+        }
+
         const itemAction = id.match(
             /^is:(buy|sell|use):([a-z0-9_-]{2,45})$/
         );
@@ -329,6 +451,8 @@ async function handleStoreInteraction(interaction) {
 
             if (mode === "use") {
                 await useProduct(interaction, key);
+            } else if (mode === "buy") {
+                await openBuyConfirmation(interaction, item);
             } else {
                 await openQuantityModal(interaction, mode, key);
             }
