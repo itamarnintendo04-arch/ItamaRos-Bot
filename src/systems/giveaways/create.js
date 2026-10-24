@@ -11,6 +11,7 @@ const {
 const { getDatabase } = require("../../../database");
 const { GIVEAWAY_SETTINGS } = require("./config");
 const { statusCard } = require("../media/statusCard");
+const { kingsGiveawayCard } = require("./kingsCard");
 
 const COLORS = Object.freeze({
     PRIMARY: GIVEAWAY_SETTINGS.DEFAULT_COLOR,
@@ -85,6 +86,7 @@ function createGiveawayEmbed({
     hostId,
     winnerCount,
     minLevel = 0,
+    kingsOnly = false,
     endsAt,
     imageUrl
 }) {
@@ -93,13 +95,17 @@ function createGiveawayEmbed({
     );
 
     const embed = new EmbedBuilder()
-        .setColor(COLORS.PRIMARY)
-        .setTitle("🎉 NEW GIVEAWAY!")
+        .setColor(kingsOnly ? 0xE4BC6C : COLORS.PRIMARY)
+        .setTitle(kingsOnly
+            ? "👑 KINGS EXCLUSIVE GIVEAWAY"
+            : "🎉 NEW GIVEAWAY!")
         .setDescription(
             [
                 `## 🎁 ${prize}`,
                 "",
-                "A brand-new giveaway has started!",
+                kingsOnly
+                    ? "✨ A royal giveaway exclusively for **Kings**!"
+                    : "A brand-new giveaway has started!",
                 "",
                 "Click **ENTER** below to participate.",
                 "Good luck to everyone!",
@@ -108,7 +114,9 @@ function createGiveawayEmbed({
                 "",
                 `**👑 Hosted by:** <@${hostId}>`,
                 `**🏆 Winners:** ${winnerCount}`,
-                `**⭐ Minimum level:** ${minLevel > 0 ? `Level ${minLevel}+` : "Everyone"}`,
+                kingsOnly
+                    ? "**👑 Entry requirement:** Any Kings rank"
+                    : `**⭐ Minimum level:** ${minLevel > 0 ? `Level ${minLevel}+` : "Everyone"}`,
                 "**Participants:** 0",
                 "",
                 `**📅 Ends:** <t:${timestamp}:F>`,
@@ -120,7 +128,9 @@ function createGiveawayEmbed({
             ].join("\n")
         )
         .setFooter({
-            text: "ItamaRos Bot • Giveaway System"
+            text: kingsOnly
+                ? "ItamaRos Bot • Kings Royal Giveaways"
+                : "ItamaRos Bot • Giveaway System"
         })
         .setTimestamp();
 
@@ -209,7 +219,8 @@ async function createGiveaway({
     duration,
     winners,
     minLevel = 0,
-    image = null
+    image = null,
+    kingsOnly = false
 }) {
     if (
         !guild?.id ||
@@ -319,7 +330,8 @@ async function createGiveaway({
         imageUrl,
 
         winnerCount: winners,
-        minLevel,
+        minLevel: kingsOnly ? 0 : minLevel,
+        kingsOnly: Boolean(kingsOnly),
 
         participants: [],
         removedParticipants: [],
@@ -352,21 +364,27 @@ async function createGiveaway({
             hostId: host.id,
             winnerCount: winners,
             minLevel,
+            kingsOnly,
             endsAt,
             imageUrl
         });
 
         const files = [];
         if (!imageUrl) {
-            const banner = await statusCard({
-                kind: "giveaway",
-                status: "active",
-                prize: sanitizedPrize,
-                subtitle: "Enter for a chance to win!"
-            });
-            embed.setImage("attachment://giveaway.png");
+            const banner = kingsOnly
+                ? await kingsGiveawayCard(sanitizedPrize)
+                : await statusCard({
+                    kind: "giveaway",
+                    status: "active",
+                    prize: sanitizedPrize,
+                    subtitle: "Enter for a chance to win!"
+                });
+            embed.setImage("attachment://" +
+                (kingsOnly ? "kings-giveaway.png" : "giveaway.png"));
             files.push(
-                new AttachmentBuilder(banner, { name: "giveaway.png" })
+                new AttachmentBuilder(banner, {
+                    name: kingsOnly ? "kings-giveaway.png" : "giveaway.png"
+                })
             );
         }
 
