@@ -193,11 +193,23 @@ async function createItem(guildId, info) {
     const price = amount(info.price);
     if (price < 1) fail("Item price must be at least 1.");
     const type = info.type || "collectible";
-    if (!["collectible", "consumable", "role"].includes(type)) {
+    if (!["collectible", "consumable", "role", "reward"].includes(type)) {
         fail("Invalid item type.");
     }
     if (type === "role" && !/^\d{17,20}$/.test(info.roleId || "")) {
         fail("Role items require a Discord role.");
+    }
+    const rewards = type === "reward" ? info.rewards : null;
+    if (type === "reward") {
+        if (!rewards || !Number.isSafeInteger(rewards.xp) ||
+            rewards.xp < 0 || rewards.xp > 200000 ||
+            !Number.isSafeInteger(rewards.coins) ||
+            rewards.coins < 0 || rewards.coins > MAX_AMOUNT ||
+            (rewards.roleId !== null &&
+             !/^\d{17,20}$/.test(rewards.roleId || "")) ||
+            (!rewards.xp && !rewards.coins && !rewards.roleId)) {
+            fail("Select at least one valid reward: XP, coins or role.");
+        }
     }
     const document = {
         _id: itemId(guildId, info.name),
@@ -205,6 +217,11 @@ async function createItem(guildId, info) {
         description: String(info.description || "").slice(0, 500),
         category: String(info.category || "General").slice(0, 40),
         price, type,
+        rewards: type === "reward" ? {
+            xp: rewards.xp,
+            coins: rewards.coins,
+            roleId: rewards.roleId
+        } : null,
         roleId: type === "role" ? info.roleId : null,
         stock: info.stock ?? null,
         hasImage: false,
@@ -224,6 +241,17 @@ async function updateItem(guildId, key, patch) {
     const existing = await getItem(guildId, key);
     if (!existing) fail("Item not found.");
 
+    // Rewards are immutable once created; legacy product types
+    // also cannot be converted into a reward product later.
+    if (Object.prototype.hasOwnProperty.call(patch, "rewards") ||
+        (existing.type === "reward" &&
+         Object.prototype.hasOwnProperty.call(patch, "type") &&
+         patch.type !== "reward") ||
+        (existing.type !== "reward" && patch.type === "reward") ||
+        (existing.type === "reward" &&
+         Object.prototype.hasOwnProperty.call(patch, "roleId"))) {
+        fail("Reward selection is locked after product creation.");
+    }
     const fields = {};
     if (Object.prototype.hasOwnProperty.call(patch, "name")) {
         const name = String(patch.name || "").trim();
@@ -255,7 +283,7 @@ async function updateItem(guildId, key, patch) {
         fields.stock = patch.stock;
     }
     if (Object.prototype.hasOwnProperty.call(patch, "type")) {
-        if (!["collectible", "consumable", "role"].includes(patch.type)) {
+        if (!["collectible", "consumable", "role", "reward"].includes(patch.type)) {
             fail("Unknown item type.");
         }
         fields.type = patch.type;
