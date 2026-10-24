@@ -141,43 +141,14 @@ async function notifyGiveawayManagers(interaction, giveawayId) {
         title: "🎉 New Giveaway Created"
     });
 
-    const recipients = new Map();
-
-    // Managers who initiated a giveaway always get the message.
-    recipients.set(interaction.user.id, interaction.user);
-
-    // The server owner should be able to manage every giveaway.
-    try {
-        const owner = await interaction.guild.fetchOwner();
-        recipients.set(owner.id, owner.user);
-    } catch (error) {
-        console.warn(
-            "[Giveaway Admin] Could not fetch owner:",
-            error.message
-        );
-    }
-
-    for (const [id, user] of recipients) {
-        try {
-            await user.send(payload);
-            console.log(
-                `[Giveaway Admin] Sent management DM to ${id}.`
-            );
-        } catch (error) {
-            console.warn(
-                `[Giveaway Admin] Management DM unavailable for ${id}: ${error.message}`
-            );
-        }
-    }
-
-    // Optional private management channel. Avoid posting
-    // sensitive admin controls in a publicly visible channel.
-    const staffChannelId = process.env.GIVEAWAY_ADMIN_CHANNEL_ID ||
-        process.env.MOD_LOG_CHANNEL_ID;
+    // Giveaways IDs belong in the private moderation log only.
+    // Don't DM creator/owner, and never publish IDs in public channels.
+    const staffChannelId = process.env.MOD_LOG_CHANNEL_ID ||
+        process.env.GIVEAWAY_ADMIN_CHANNEL_ID;
 
     if (!staffChannelId) {
-        console.log(
-            "[Giveaway Admin] No private staff channel configured; host and owner were notified."
+        console.warn(
+            "[Giveaway Admin] Configure MOD_LOG_CHANNEL_ID in Render to receive private IDs."
         );
         return;
     }

@@ -72,6 +72,9 @@ const giveawayTicketCommand = require(
 const levelCommand = require("./systems/xp/levelCommand");
 const xpCommand = require("./systems/xp/xpCommand");
 const invitesCommand = require("./systems/invites/command");
+const economyCommand = require("./systems/economy/command");
+const storeCommand = require("./systems/economy/storeCommand");
+const storeAdminCommand = require("./systems/economy/adminCommand");
 const tomorrowQuizCommand = require(
   "./systems/dailyQuestion/tomorrowCommand"
 );
@@ -161,7 +164,10 @@ const commandModules = [
   levelCommand,
   xpCommand,
   tomorrowQuizCommand,
-  invitesCommand
+  invitesCommand,
+  economyCommand,
+  storeCommand,
+  storeAdminCommand
 ];
 
 for (const command of commandModules) {

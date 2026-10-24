@@ -26,7 +26,7 @@ function slug(name) {
         .slice(0, 45);
 }
 function amount(value) {
-    if (!Number.isSafeInteger(value) || value < 1 ||
+    if (!Number.isSafeInteger(value) || value < 0 ||
         value > MAX_AMOUNT) throw new Error("Amount must be between 1 and 1,000,000,000.");
     return value;
 }
@@ -74,6 +74,7 @@ async function log(session, guildId, kind, userId, targetId, value, extra = {}) 
 
 async function moveMoney(guildId, userId, kind, value) {
     const n = amount(value);
+    if (n < 1) fail("Amount must be at least 1.");
     const from = kind === "deposit" ? "cash" : "bank";
     const to = kind === "deposit" ? "bank" : "cash";
     if (kind !== "deposit" && kind !== "withdraw") fail("Unknown transfer.");
@@ -93,6 +94,7 @@ async function moveMoney(guildId, userId, kind, value) {
 
 async function pay(guildId, fromId, toId, value) {
     const n = amount(value);
+    if (n < 1) fail("Amount must be at least 1.");
     if (fromId === toId) fail("You cannot pay yourself.");
     await inTransaction(async session => {
         await setupAccount(guildId, fromId, session);
@@ -155,10 +157,11 @@ async function adjustMoney(guildId, userId, mode, kind, value, actorId) {
             mode === "add" ? current[kind] + n :
                 current[kind] - n;
         if (next < 0 || next > MAX_BALANCE) fail("Balance out of range.");
-        await accounts().updateOne({
+        const applied = await accounts().updateOne({
             _id: id(guildId, userId),
             [kind]: current[kind]
         }, { $set: { [kind]: next } }, { session });
+        if (!applied.matchedCount) fail("Balance changed. Try again.");
         await log(session, guildId, "staff_" + mode, actorId, userId, n, {
             balanceType: kind
         });
@@ -188,6 +191,7 @@ async function createItem(guildId, info) {
     const key = slug(info.name);
     if (!key || key.length < 2) fail("Item name must use letters or numbers.");
     const price = amount(info.price);
+    if (price < 1) fail("Item price must be at least 1.");
     const type = info.type || "collectible";
     if (!["collectible", "consumable", "role"].includes(type)) {
         fail("Invalid item type.");
