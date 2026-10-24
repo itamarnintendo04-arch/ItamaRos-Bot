@@ -53,7 +53,7 @@ async function execute(interaction) {
                 "**Kings rank:** " + (tier ? "Level " + tier + "/5" :
                     "Not a Kings member"),
                 "**Rank XP:** " + activityXp.toLocaleString("en-US"),
-                "!tier ? "**Next step:** Become a Kings member to unlock Level 1." : "",
+                !tier ? "**Next step:** Become a Kings member to unlock Level 1." : "",
                 next ? "**Next Kings level:** " + Math.max(0,
                     next.requiredXp - activityXp) + " activity XP remaining"
                     : tier === 5 ? "**Status:** Maximum rank reached!" : "",
