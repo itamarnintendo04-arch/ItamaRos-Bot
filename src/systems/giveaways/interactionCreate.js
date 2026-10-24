@@ -167,8 +167,23 @@ async function handleGiveawayInteraction(interaction) {
                 return true;
             }
 
+            // This response is ephemeral (manager only).
+            // Never publish the database ID to participants.
             await interaction.editReply({
-                content: "🎉 Giveaway created successfully!"
+                content: [
+                    "🎉 **Giveaway created successfully!**",
+                    "",
+                    `🎁 **Prize:** ${prize}`,
+                    `🏆 **Winners:** ${winners}`,
+                    `⭐ **Minimum level:** ${minLevel > 0 ? `Level ${minLevel}+` : "Everyone"}`,
+                    "",
+                    `🆔 **Giveaway ID:** \`${result.giveawayId}\``,
+                    `🔗 **Giveaway message:** ${result.url}`,
+                    "",
+                    "Save the ID to use /giveaway end,",
+                    "/giveaway cancel or /giveaway-admin."
+                ].join("\n"),
+                allowedMentions: { parse: [] }
             });
 
             return true;
