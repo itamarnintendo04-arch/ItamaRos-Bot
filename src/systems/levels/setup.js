@@ -259,8 +259,10 @@ async function applyOverwrites(guild, channel, tier, roles) {
         });
 
         // A high-level rank can visit lower-level rank channels.
+        const allowed = new Set([guild.id, bot.id]);
         for (const [level, role] of roles) {
             if (level >= tier) {
+                allowed.add(role.id);
                 await channel.permissionOverwrites.edit(role.id, {
                     ViewChannel: true,
                     SendMessages: true,
@@ -274,6 +276,16 @@ async function applyOverwrites(guild, channel, tier, roles) {
             }
         }
 
+        // Clear accidental visibility granted to unrelated roles.
+        for (const overwrite of channel.permissionOverwrites.cache.values()) {
+            if (allowed.has(overwrite.id)) continue;
+            if (overwrite.type === 0 && overwrite.allow.has(P.ViewChannel)) {
+                await channel.permissionOverwrites.edit(overwrite.id, {
+                    ViewChannel: false
+                });
+            }
+        }
+
         return;
     }
 
@@ -283,13 +295,24 @@ async function applyOverwrites(guild, channel, tier, roles) {
         ...messageDenied()
     }, { reason: "ItamaRos: public read-only boost rules" });
 
-    // A role-specific SendMessages allow can override the
-    // @everyone deny. Explicitly deny ordinary role posting.
-    await guild.roles.fetch();
-    for (const role of guild.roles.cache.values()) {
-        if (role.id === guild.id || role.managed) continue;
-        if (role.permissions.has(P.Administrator)) continue;
-        await channel.permissionOverwrites.edit(role.id, messageDenied());
+    // Existing channel role overwrites may bypass the @everyone
+    // read-only restriction. Deny only those that explicitly allow
+    // writing, rather than adding a permission overwrite per role
+    // (Discord channels are capped at 100 overwrites).
+    for (const overwrite of channel.permissionOverwrites.cache.values()) {
+        if (overwrite.id === bot.id ||
+            overwrite.id === guild.id ||
+            overwrite.type !== 0) continue;
+        const sends = [
+            P.SendMessages, P.SendMessagesInThreads,
+            P.CreatePublicThreads, P.CreatePrivateThreads,
+            P.AddReactions
+        ];
+        if (sends.some(permission => overwrite.allow.has(permission))) {
+            await channel.permissionOverwrites.edit(
+                overwrite.id, messageDenied()
+            );
+        }
     }
 
     await channel.permissionOverwrites.edit(bot.id, {
