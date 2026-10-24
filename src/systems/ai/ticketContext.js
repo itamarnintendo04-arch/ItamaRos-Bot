@@ -17,11 +17,11 @@ function clean(value, limit = 650) {
 function redact(value) {
     return String(value)
         .replace(
-            new RegExp("(password|secret|token|api[_ -]?key)\\\\s*[:=]\\\\s*[^\\\\s,;]+", "gi"),
+            /(password|secret|token|api[_ -]?key)\s*[:=]\s*[^\s,;]+/gi,
             "$1: [REDACTED]"
         )
         .replace(
-            new RegExp("mfa\\\\.[A-Za-z0-9_-]{20,}", "g"),
+            /mfa\.[A-Za-z0-9_-]{20,}/g,
             "[REDACTED CREDENTIAL]"
         );
 }
