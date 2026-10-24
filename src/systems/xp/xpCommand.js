@@ -68,8 +68,18 @@ async function execute(interaction) {
         interaction.options.getInteger("amount", true)
     );
 
+    let kingsNote = "";
+    try {
+        const member = await interaction.guild.members.fetch(user.id);
+        const { syncMemberRank } = require("../kings/ranks");
+        const tier = await syncMemberRank(member);
+        if (tier) kingsNote = " 👑 Kings Level " + tier + ".";
+    } catch (error) {
+        console.warn("[Kings Ranks] Staff XP role update failed:", error.message);
+    }
+
     await interaction.editReply({
-        content: `✅ <@${user.id}> now has **${profile.xp} XP** (Level **${profile.level}**).`,
+        content: `✅ <@${user.id}> now has **${profile.xp} XP** (Level **${profile.level}**).${kingsNote}`,
         allowedMentions: { parse: [] }
     });
 }
