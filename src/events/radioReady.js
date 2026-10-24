@@ -12,6 +12,7 @@ const UNHEALTHY_RESTART_MS = 60_000;
 let starting = false;
 let retryTimer = null;
 let disconnectedSince = null;
+let lastError = null;
 
 async function resolveRadioChannel(client) {
     const guildId = process.env.GUILD_ID;
@@ -76,15 +77,15 @@ async function resolveRadioChannel(client) {
 }
 
 async function startRadio(client) {
-    if (starting) return;
+    if (starting) return false;
 
     if (radioPlayer.running) {
         if (radioPlayer.getStatus().connected || radioPlayer.connecting) {
             disconnectedSince = null;
-            return;
+            return true;
         }
         if (!disconnectedSince) disconnectedSince = Date.now();
-        if (Date.now() - disconnectedSince < UNHEALTHY_RESTART_MS) return;
+        if (Date.now() - disconnectedSince < UNHEALTHY_RESTART_MS) return false;
 
         console.warn("[Radio] Voice offline for over 60 seconds, restarting player.");
         radioPlayer.stop();
@@ -115,6 +116,7 @@ async function startRadio(client) {
         }
         await radioPlayer.start(channel);
         disconnectedSince = null;
+        lastError = null;
         console.log(
             "[Radio] Connected to " + channel.name + " (" + channel.id +
             "), " + tracks.length + " music tracks."
@@ -126,14 +128,22 @@ async function startRadio(client) {
                 console.warn("[Radio] Credits update failed:", error.message)
             );
         }
+        return true;
     } catch (error) {
+        lastError = String(error.message || error);
         console.error("[Radio] Startup/health check failed:", error);
+        return false;
     } finally {
         starting = false;
     }
 }
 
+function status() {
+    return { ...radioPlayer.getStatus(), lastError, starting };
+}
+
 module.exports = {
+    startRadio, status, resolveRadioChannel,
     name: Events.ClientReady,
     once: true,
     async execute(client) {
