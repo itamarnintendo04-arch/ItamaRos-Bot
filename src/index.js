@@ -53,6 +53,7 @@ const giveawayCommand = require(
   "./systems/giveaways/command"
 );
 
+const kingsGiveawayCommand = require("./systems/giveaways/kingsCommand");
 const giveawayAdminCommand = require(
   "./systems/giveaways/adminCommand"
 );
@@ -156,6 +157,7 @@ const commandModules = [
   },
 
   giveawayAdminCommand,
+  kingsGiveawayCommand,
   activeGiveawaysCommand,
 
   {
