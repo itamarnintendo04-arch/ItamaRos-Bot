@@ -408,6 +408,29 @@ async function handleGiveawayButtons(interaction) {
             }
         }
 
+        if (isJoin && giveaway.kingsOnly) {
+            const member = await interaction.guild.members.fetch(
+                interaction.user.id
+            ).catch(() => null);
+            const kingsRoleId = process.env.KINGS_ROLE_ID;
+            const hasKings = Boolean(member?.roles.cache.some(role =>
+                role.id === kingsRoleId ||
+                /^kings?(?:[ |:-]*(?:level|lvl|rank|tier)?[ -]*[0-9]+)?$/i
+                    .test(role.name)
+            ));
+            if (!hasKings) {
+                await interaction.editReply({
+                    embeds: [createResponse(
+                        "👑 Kings Rank Required",
+                        "This giveaway is only for members with any Kings rank. No minimum Kings level is required.",
+                        COLORS.WARNING
+                    )],
+                    components: []
+                });
+                return true;
+            }
+        }
+
         if (isJoin) {
             const removedParticipants = Array.isArray(
                 giveaway.removedParticipants
