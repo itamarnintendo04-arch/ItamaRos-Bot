@@ -50,7 +50,15 @@ async function execute(interaction) {
             "**XP to next level:** " +
                 profile.xpToNextLevel.toLocaleString("en-US"),
             "**Next level at:** " +
-                profile.nextLevelXp.toLocaleString("en-US") + " XP"
+                profile.nextLevelXp.toLocaleString("en-US") + " XP",
+            "",
+            "💬 **Chat activity rewards**",
+            "**Messages that earned XP:** " +
+                profile.chatMessagesRewarded.toLocaleString("en-US"),
+            "**XP for your next eligible chat message:** " +
+                profile.nextMessageXp.toLocaleString("en-US"),
+            "**Latest chat XP award:** " +
+                profile.lastMessageXp.toLocaleString("en-US")
         ].join("\n"),
         allowedMentions: { parse: [] }
     });
