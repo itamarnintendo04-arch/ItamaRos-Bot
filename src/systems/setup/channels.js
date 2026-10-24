@@ -458,11 +458,30 @@ async function ensureChannels(client) {
     return bootstrapPromise;
 }
 
+// Manual deletion or later permission changes can be reconciled
+// without restarting the entire bot.
+let refreshPromise = null;
+async function refreshChannels(client) {
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = (async () => {
+        if (bootstrapPromise) {
+            await bootstrapPromise.catch(() => {});
+        }
+        bootstrapComplete = false;
+        bootstrapPromise = null;
+        return ensureChannels(client);
+    })().finally(() => {
+        refreshPromise = null;
+    });
+    return refreshPromise;
+}
+
 module.exports = {
     SPECIFICATIONS,
     getKingsRole,
     permissionOverwrites,
     resolveOne,
     runSetup,
-    ensureChannels
+    ensureChannels,
+    refreshChannels
 };
