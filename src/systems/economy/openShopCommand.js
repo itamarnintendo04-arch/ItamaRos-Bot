@@ -6,6 +6,7 @@ const {
     PermissionFlagsBits
 } = require("discord.js");
 const economy = require("./service");
+const { rewardSummary } = require("./rewardPurchase");
 const { STORE_CHANNEL_ID, clean } = require("./storePanel");
 
 const data = new SlashCommandBuilder()
@@ -37,6 +38,8 @@ async function makePublicShop(guildId) {
             : item.stock === null
                 ? " • Unlimited"
                 : " • " + item.stock + " left") +
+        (item.type === "reward" ?
+            "\n🎁 Instant: " + rewardSummary(item) : "") +
         "\nID: " + item.key
     );
 
@@ -53,6 +56,7 @@ async function makePublicShop(guildId) {
                 ? "More products are available with /store list."
                 : "",
             "🛟 Buttons not working? /store buy always works as backup.",
+            "💜 Instant reward items grant XP, coins and roles as soon as you pay.",
             "📦 /store info shows details and optional product pictures.",
             "🎒 /store inventory • ✨ /store use • 💰 /store bank"
         ].join("\n").slice(0, 3950))

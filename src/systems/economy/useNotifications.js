@@ -37,7 +37,9 @@ async function notifyItemUsed({ guild, user, item, action }) {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle("📦 Store Item Used")
+        .setTitle(action === "Instant rewards delivered"
+            ? "🎁 Instant Store Reward Delivered"
+            : "📦 Store Item Used")
         .setColor(0x8B5CF6)
         .setDescription([
             "**Member:** <@" + user.id + ">",

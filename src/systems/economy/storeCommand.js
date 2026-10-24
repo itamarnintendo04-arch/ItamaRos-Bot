@@ -95,6 +95,8 @@ async function execute(interaction) {
                 (items.length ? items.map(item =>
                     "📦 **" + clean(item.name, 70) + "** • " +
                     fmt(item.price, currency) +
+                    (item.type === "reward"
+                        ? "\n🎁 Instant: " + rewardSummary(item) : "") +
                     "\nID: " + item.key +
                     " • " + (item.stock === null
                         ? "Unlimited stock"
