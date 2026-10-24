@@ -7,13 +7,17 @@ const { getDatabase } = require("../../../database");
 const ROLE_DEFINITIONS = Object.freeze([
     { tier: 1, name: "Level 1", color: 0x72C7F6, requiredXp: 200, reward: 500 },
     { tier: 2, name: "Level 2", color: 0xAA83FF, requiredXp: 400, reward: 1500 },
-    { tier: 3, name: "Level 3", color: 0xFFD166, requiredXp: 600, reward: 3000 }
+    { tier: 3, name: "Level 3", color: 0xFFD166, requiredXp: 600, reward: 3000 },
+    { tier: 4, name: "Level 4", color: 0x7EE1C1, requiredXp: 800, reward: 4500 },
+    { tier: 5, name: "Level 5", color: 0xFF97C2, requiredXp: 1000, reward: 6000 }
 ]);
 
 const CHANNELS = Object.freeze([
     { tier: 1, name: "level-1" },
     { tier: 2, name: "level-2" },
-    { tier: 3, name: "level-3" }
+    { tier: 3, name: "level-3" },
+    { tier: 4, name: "level-4" },
+    { tier: 5, name: "level-5" }
 ]);
 const RULES_CHANNEL = "boost-rules";
 const ID = /^\d{17,20}$/;
@@ -163,11 +167,19 @@ function boostRules() {
         "⭐ **ACTIVITY RANKS**",
         "• **Level 1** — 200 chat-earned XP → a Level 1 role, 500 bonus coins and 500 bonus XP.",
         "• **Level 2** — 400 chat-earned XP → a Level 2 role, 1,500 bonus coins and 1,500 bonus XP.",
-        "• **Level 3** — 600 chat-earned XP → a Level 3 role, 3,000 bonus coins and 3,000 bonus XP.",
+        "• **Level 3** — 600 chat-earned XP → Level 3 role, 3,000 bonus coins and XP.",
+        "• **Level 4** — 800 chat-earned XP → Level 4 role, 4,500 bonus coins and XP.",
+        "• **Level 5** — 1,000 chat-earned XP → Level 5 role, 6,000 bonus coins and XP.",
         "",
         "🎁 Each rank reward is paid **once per user**.",
         "📈 Bonus XP does not count toward the next activity-rank milestone.",
         "🔒 Each rank unlocks its level channels and lower-level rank channels.",
+        "",
+        "👑 **KINGS RANKS (1–5)**",
+        "• Active or permanently retained Kings members receive exactly one Kings Level role.",
+        "• Every 200 total XP unlocks the next Kings rank, up to Level 5.",
+        "• Kings Level 5 can use all lower Kings categories and perks.",
+        "• Administrators and staff with Manage Server can access every Kings category.",
         "",
         "💜 Be respectful, follow server rules and enjoy ItamaRos!",
         "",
