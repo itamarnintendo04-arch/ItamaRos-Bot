@@ -2,6 +2,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } =
  require("discord.js");
 const eco = require("./service");
+const { refreshStorePanel } = require("./storePanel");
 
 const data = new SlashCommandBuilder().setName("store-admin")
  .setDescription("Manage the virtual currency and store")
@@ -97,6 +98,16 @@ async function execute(interaction) {
    await eco.setSetting(guild,"dailyReward",daily);
    await eco.setSetting(guild,"workReward",work);
    reply="✅ Rewards updated. Daily: "+daily+", work: "+work+".";
+  }
+  // Keep the public catalog in the ORIGINAL #item-store current.
+  // Publishing failures must never roll back valid store operations.
+  if(["create", "remove-item", "currency"].includes(action)){
+   await refreshStorePanel(interaction.guild).catch(error=>{
+    console.warn(
+     "[Item Store] Couldn't refresh shop panel:",
+     error.message
+    );
+   });
   }
   await interaction.editReply({
    content:reply,allowedMentions:{parse:[]}
