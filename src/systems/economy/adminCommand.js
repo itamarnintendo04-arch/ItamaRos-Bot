@@ -69,7 +69,13 @@ function addProperties(sub, required) {
             .setRequired(false))
         .addAttachmentOption(o => o.setName("image")
             .setDescription("Optional product photo (PNG/JPG/WebP/GIF; max 7 MB)")
-            .setRequired(false));
+            .setRequired(false))
+        .addBooleanOption(o => o.setName("kings_only")
+            .setDescription("Only Kings members (and staff) can see and buy this item")
+            .setRequired(false))
+        .addIntegerOption(o => o.setName("kings_min_level")
+            .setDescription("Required XP level for Kings (0-1000); staff bypass")
+            .setMinValue(0).setMaxValue(1000).setRequired(false));
 }
 
 data.addSubcommand(s => addProperties(
@@ -169,6 +175,13 @@ function getProperties(options, isCreate) {
 
     const stock = options.getInteger("stock");
     if (stock !== null) props.stock = stock === -1 ? null : stock;
+
+    const kingsOnly = options.getBoolean("kings_only");
+    const kingsMinLevel = options.getInteger("kings_min_level");
+    if (kingsOnly !== null) props.kingsOnly = kingsOnly;
+    if (kingsMinLevel !== null) props.minKingsLevel = kingsMinLevel;
+    if (isCreate && kingsOnly === null) props.kingsOnly = false;
+    if (isCreate && kingsMinLevel === null) props.minKingsLevel = 0;
 
     const role = options.getRole("role");
     if (role) props.roleId = role.id;
@@ -287,6 +300,10 @@ async function execute(interaction) {
             response = "✅ **" + item.name + "** " +
                 (create ? "created" : "updated") +
                 " successfully. Item ID: " + item.key +
+                (item.kingsOnly
+                    ? "\\n👑 Kings only — XP level " +
+                      (item.minKingsLevel || 0) + "+ (staff bypass)"
+                    : "") +
                 (create && item.type === "reward"
                     ? "\n🎁 Instant rewards: " +
                       (item.rewards.xp ? item.rewards.xp + " XP " : "") +
