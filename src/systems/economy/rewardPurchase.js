@@ -56,15 +56,22 @@ async function purchaseReward(guild, user, itemKey, member, checkoutId) {
     const reward = item.rewards;
     if (!reward) fail("This reward product is not configured.");
 
-    const role = await validateRewardRole(member, reward.roleId);
-    let roleGranted = false;
+    const roleIds = reward.roleIds || (reward.roleId ? [reward.roleId] : []);
+    const roles = [];
+    for (const id of roleIds) roles.push(await validateRewardRole(member, id));
+    const grantedRoles = [];
 
     // External Discord roles cannot be part of a Mongo transaction.
     // Grant first, and remove only this new grant on a failed purchase.
     // Existing roles are never touched.
-    if (role) {
-        await member.roles.add(role, "ItamaRos instant shop reward");
-        roleGranted = true;
+    try {
+        for (const role of roles) {
+            await member.roles.add(role, "ItamaRos instant shop reward");
+            grantedRoles.push(role);
+        }
+    } catch (error) {
+        for (const role of grantedRoles) await member.roles.remove(role).catch(() => {});
+        throw error;
     }
 
     const session = getMongoClient().startSession();
@@ -170,17 +177,9 @@ async function purchaseReward(guild, user, itemKey, member, checkoutId) {
         });
         return result;
     } catch (error) {
-        if (roleGranted) {
-            try {
-                await member.roles.remove(
-                    role, "Reverted failed shop purchase"
-                );
-            } catch (rollbackError) {
-                console.error(
-                    "[Item Store] CRITICAL: Failed to roll back role:",
-                    guildId, userId, role.id, rollbackError
-                );
-            }
+        for (const role of grantedRoles) {
+            await member.roles.remove(role, "Reverted failed shop purchase").catch(error =>
+                console.error("[Item Store] CRITICAL: Role rollback failed:", role.id, error));
         }
         if (error.code === 11000 && checkoutId) {
             fail("This checkout has already been completed.");
@@ -210,7 +209,8 @@ function rewardSummary(item) {
     const values = [
         r.xp ? "⭐ " + r.xp.toLocaleString("en-US") + " XP" : "",
         r.coins ? "🪙 " + r.coins.toLocaleString("en-US") + " coins" : "",
-        r.roleId ? "👑 <@&" + r.roleId + ">" : ""
+        ...(r.roleIds || (r.roleId ? [r.roleId] : [])).map(id => "👑 <@&" + id + ">"),
+        ...(item.externalRewards || []).map(name => "📦 " + name + " (staff delivery)")
     ].filter(Boolean);
     return values.join(" + ");
 }
