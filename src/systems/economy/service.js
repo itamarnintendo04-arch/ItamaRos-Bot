@@ -222,9 +222,9 @@ async function createItem(guildId, info) {
     const kingsOnly = info.kingsOnly === true;
     const minKingsLevel = info.minKingsLevel ?? 0;
     if (!Number.isSafeInteger(minKingsLevel) ||
-        minKingsLevel < 0 || minKingsLevel > 1000 ||
+        minKingsLevel < 0 || minKingsLevel > 5 ||
         (!kingsOnly && minKingsLevel !== 0)) {
-        fail("Kings level requires Kings-only mode and must be 0-1000.");
+        fail("Kings rank requires Kings-only mode and must be 1-5.");
     }
     const document = {
         _id: itemId(guildId, info.name),
@@ -320,8 +320,8 @@ async function updateItem(guildId, key, patch) {
     }
     if (Object.prototype.hasOwnProperty.call(patch, "minKingsLevel")) {
         if (!Number.isSafeInteger(patch.minKingsLevel) ||
-            patch.minKingsLevel < 0 || patch.minKingsLevel > 1000) {
-            fail("Kings minimum level must be between 0 and 1000.");
+            patch.minKingsLevel < 0 || patch.minKingsLevel > 5) {
+            fail("Kings minimum rank must be between 1 and 5.");
         }
         fields.minKingsLevel = patch.minKingsLevel;
     }
