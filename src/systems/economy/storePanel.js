@@ -116,6 +116,20 @@ function storeComponents(items, requestedPage = 0) {
         rows.push(new ActionRowBuilder().addComponents(selector));
     }
 
+    // Prominent Buy buttons show both the item's price and coin emoji.
+    // Keep the selected item list as well, for large catalogs.
+    const quickBuys = subset.filter(item => item.stock !== 0).slice(0, 10);
+    for (let offset = 0; offset < quickBuys.length; offset += 5) {
+        const buttons = quickBuys.slice(offset, offset + 5).map(item =>
+            new ButtonBuilder()
+                .setCustomId("is:buy:" + item.key)
+                .setLabel(clean(item.name, 32) + " • " + num(item.price))
+                .setEmoji("🪙")
+                .setStyle(ButtonStyle.Success)
+        );
+        rows.push(new ActionRowBuilder().addComponents(...buttons));
+    }
+
     const nav = new ActionRowBuilder();
     nav.addComponents(
         new ButtonBuilder()
@@ -149,7 +163,7 @@ async function makeShopPayload(guildId, page = 0) {
     ]);
     return {
         embeds: [storeEmbed(items, settings.currency)],
-        components: [],
+        components: storeComponents(items, page),
         allowedMentions: { parse: [] }
     };
 }
@@ -194,7 +208,7 @@ async function updateStorePanel(guild) {
         if (previous?.author?.id === bot.id) {
             await previous.edit(payload);
             console.log(
-                "[Item Store] Refreshed command-only shop panel in " +
+                "[Item Store] Refreshed interactive shop panel in " +
                 channel.name
             );
             return true;
@@ -212,7 +226,7 @@ async function updateStorePanel(guild) {
     }, { upsert: true });
 
     console.log(
-        "[Item Store] Posted command-only shop panel to #" +
+        "[Item Store] Posted interactive shop panel to #" +
         channel.name + " (" + channel.id + ")."
     );
     return true;
