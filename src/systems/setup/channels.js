@@ -79,11 +79,6 @@ const SPECIFICATIONS = Object.freeze([
         intro: "👑🛒 **Kings Lounge**\n\nA private lounge for Kings members.\n\nUse /store list, /store inventory, and /economy balance. The store currently shares its catalog with the main shop; Kings-only items may be added later."
     },
     {
-        key: "radio-info", name: "radio-info", type: "text",
-        policy: "announcements",
-        intro: "📻 **ItamaRos Radio**\n\nJoin the voice channel named **radio** to listen to automatically played music. No song queue command is required.\n\n🛡️ **Staff:** add permitted music tracks to the bot's radio assets and configure RADIO_VOICE_CHANNEL_ID if using a custom channel."
-    },
-    {
         key: "radio", name: "radio",
         env: "RADIO_VOICE_CHANNEL_ID",
         type: "voice", policy: "radio",
@@ -110,7 +105,6 @@ const CHANNEL_ALIASES = Object.freeze({
     "kings-giveaways": ["kings-giveaways", "king-giveaways", "הגרלות-מלכים"],
     "kings-drops": ["kings-drops", "king-drops", "דרופים-מלכים"],
     "kings-shop": ["kings-shop", "king-shop", "חנות-מלכים"],
-    "radio-info": ["radio-info", "radio-chat", "radio-text", "radio-credits"],
     radio: ["radio", "radio-station", "רדיו"]
 });
 
