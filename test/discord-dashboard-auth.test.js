@@ -206,6 +206,38 @@ test("requires Discord OAuth, blocks login CSRF, and revalidates roles", async (
     assert.match(loggedOut.body, /Continue with Discord/);
 });
 
+test("Verified staff receive one English registration DM per server", async () => {
+    const sent = [];
+    const notifyingClient = {
+        users: {
+            fetch: async id => ({
+                id,
+                send: async payload => {
+                    sent.push(payload);
+                    return { id: "777777777777777777" };
+                }
+            })
+        }
+    };
+    const account = {
+        id: "333333333333333333",
+        username: "new_staff"
+    };
+    const first = await auth.notifyFirstDashboardRegistration(
+        notifyingClient, guild, account
+    );
+    const second = await auth.notifyFirstDashboardRegistration(
+        notifyingClient, guild, account
+    );
+    assert.equal(first, true);
+    assert.equal(second, false);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].content, /Registration Confirmed/);
+    assert.match(sent[0].content,
+        /https:\/\/itamaros-tickets\.onrender\.com\/admin/);
+    assert.deepEqual(sent[0].allowedMentions, { parse: [] });
+});
+
 test("OAuth never accepts an unprivileged Discord member", async () => {
     authorized = false;
     const request = await visit("GET", "/admin/login");
