@@ -14,6 +14,7 @@ const {
 } = require("discord.js");
 
 const { getDatabase } = require("../../../database");
+const { getStreak, validDay, recordCorrectAnswer } = require("./streak");
 
 const SETTINGS = Object.freeze({
   timeZone: "Asia/Jerusalem",
@@ -186,6 +187,10 @@ function questionEmbed(quiz, reveal = false) {
         "Answers stay private until 9 PM."
       );
 
+  const eventNote = quiz.streakDay && quiz.streakDays
+    ? "\\n\\n🏆 **Prize Streak: Day " + quiz.streakDay +
+      "/" + quiz.streakDays + "** — Complete every day to claim a prize."
+    : "";
   return new EmbedBuilder()
     .setColor(
       reveal ? 0x57f287 : 0x9b59b6
@@ -193,10 +198,10 @@ function questionEmbed(quiz, reveal = false) {
     .setTitle(
       "🎮 ItamaRos | Question of the Day"
     )
-    .setDescription(description)
+    .setDescription(description + eventNote)
     .setFooter({
       text:
-        `Question for ${quiz.date} • Israel time`
+        `Question for ${quiz.date} • ItamaRos`
     });
 }
 
@@ -242,6 +247,14 @@ async function publishQuestion(client, date) {
   const quiz = await quizzes().findOne({
     _id: id
   });
+  if (quiz) {
+    const streak = await getStreak(guild.id);
+    const index = validDay(streak, date);
+    if (index >= 0) {
+      quiz.streakDay = index + 1;
+      quiz.streakDays = streak.days;
+    }
+  }
 
   if (
     !quiz?.question ||
@@ -910,11 +923,31 @@ async function handleQuizInteraction(interaction) {
         submittedAt: new Date()
       });
 
+      let detail = "";
+      try {
+        const progress = await recordCorrectAnswer(
+          guild, interaction.user, date
+        );
+        if (progress?.won) {
+          detail = progress.channelId
+            ? "\\n🏆 **Prize unlocked!** Your private claim ticket: <#" +
+              progress.channelId + ">."
+            : "\\n🏆 **Prize unlocked!** Your ticket is being prepared.";
+        } else if (progress && progress.eligible) {
+          detail = "\\n🔥 Prize streak: " + progress.completed +
+            "/" + progress.days + " correct days!";
+        } else if (progress) {
+          detail = "\\nℹ️ You missed an earlier streak day. " +
+            "Today's normal quiz result still counts.";
+        }
+      } catch (error) {
+        console.error("[Daily Quiz] Streak ticket error:", error);
+        detail = "\\n⚠️ Your correct answer is saved, but your prize " +
+          "ticket could not be opened automatically. Please contact staff.";
+      }
       await interaction.reply(
-        replyOptions(
-          interaction,
-          "✅ Correct! You're on today's winners list! 🎉"
-        )
+        replyOptions(interaction,
+          "✅ Correct! You're on today's winners list! 🎉" + detail)
       );
     } catch (error) {
       if (error.code !== 11000) {
