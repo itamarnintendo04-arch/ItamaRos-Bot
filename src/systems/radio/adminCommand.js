@@ -1,9 +1,10 @@
 "use strict";
 
 const {
-    SlashCommandBuilder, PermissionFlagsBits,
+    SlashCommandBuilder, PermissionFlagsBits, ChannelType,
     MessageFlags
 } = require("discord.js");
+const { getDatabase } = require("../../../database");
 
 const radioPlayer = require("./player");
 const radio = require("../../events/radioReady");
@@ -16,7 +17,13 @@ const data = new SlashCommandBuilder()
     .addSubcommand(s => s.setName("status")
         .setDescription("Show the current voice connection and playback state"))
     .addSubcommand(s => s.setName("restart")
-        .setDescription("Reconnect to radio and restart the playlist"));
+        .setDescription("Reconnect to radio and restart the playlist"))
+    .addSubcommand(s => s.setName("set-channel")
+        .setDescription("Choose the voice channel and connect Radio immediately")
+        .addChannelOption(o => o.setName("voice_channel")
+            .setDescription("The Discord voice channel where Radio will play")
+            .addChannelTypes(ChannelType.GuildVoice)
+            .setRequired(true)));
 
 function describe(state) {
     return [
@@ -44,6 +51,47 @@ async function execute(interaction) {
 
     try {
         const action = interaction.options.getSubcommand();
+        if (action === "set-channel") {
+            const channel = interaction.options.getChannel("voice_channel", true);
+            if (channel.type !== ChannelType.GuildVoice ||
+                channel.guildId !== interaction.guildId) {
+                throw new Error("Choose a voice channel from this server.");
+            }
+            const me = await interaction.guild.members.fetchMe();
+            const perms = channel.permissionsFor(me);
+            const needed = [
+                [PermissionFlagsBits.ViewChannel, "View Channel"],
+                [PermissionFlagsBits.Connect, "Connect"],
+                [PermissionFlagsBits.Speak, "Speak"]
+            ];
+            const missing = needed.filter(([bit]) => !perms?.has(bit))
+                .map(([, label]) => label);
+            if (missing.length) {
+                throw new Error("Grant the bot " + missing.join(", ") +
+                    " in #" + channel.name + " before enabling Radio.");
+            }
+            await getDatabase().collection("radio_settings").updateOne({
+                _id: interaction.guildId
+            }, {
+                $set: {
+                    guildId: interaction.guildId,
+                    voiceChannelId: channel.id,
+                    configuredBy: interaction.user.id,
+                    updatedAt: new Date()
+                }
+            }, { upsert: true });
+            radioPlayer.stop();
+            const connected = await radio.startRadio(interaction.client);
+            await interaction.editReply({
+                content: (connected
+                    ? "✅ Radio channel saved and connected to <#" + channel.id + ">."
+                    : "⚠️ Channel saved, but the voice connection is still failing.") +
+                    "\n" + describe(radio.status()),
+                allowedMentions: { parse: [] }
+            });
+            return;
+        }
+
         if (action === "restart") {
             radioPlayer.stop();
             const connected = await radio.startRadio(interaction.client);
