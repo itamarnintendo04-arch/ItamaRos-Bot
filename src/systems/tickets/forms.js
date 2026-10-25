@@ -64,13 +64,13 @@ function getPublicTicketType(typeKey) {
         throw new Error("INVALID_TICKET_TYPE");
     }
 
-    // Giveaway winner tickets must only be created
+    // Automated giveaway and daily-quiz prize tickets must only be created
     // by the automatic giveaway system or by the
     // dedicated staff command.
     //
     // Public panels, old buttons and old modals
     // are never allowed to open this type.
-    if (isGiveawayType(type)) {
+    if (type.publicEnabled !== true || isGiveawayType(type)) {
         throw new Error("GIVEAWAY_RESTRICTED");
     }
 
