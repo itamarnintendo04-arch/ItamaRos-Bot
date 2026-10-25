@@ -20,6 +20,46 @@ const hash = value => createHash("sha256").update(value).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
 const states = () => getDatabase().collection("dashboard_oauth_states");
 const sessions = () => getDatabase().collection("dashboard_web_sessions");
+const registrations = () =>
+    getDatabase().collection("dashboard_manager_registrations");
+
+async function notifyFirstDashboardRegistration(client, guild, user) {
+    // A registration is created only after Discord has verified real
+    // Manage Server / Administrator permissions in the configured guild.
+    // Unique Mongo _id makes this notification once per guild/user.
+    const id = guild.id + ":" + user.id;
+    try {
+        await registrations().insertOne({
+            _id: id,
+            guildId: guild.id,
+            userId: user.id,
+            registeredAt: new Date(),
+            verifiedVia: "discord_oauth2"
+        });
+    } catch (error) {
+        if (error.code === 11000) return false;
+        throw error;
+    }
+
+    // Discord privacy settings may block bot DMs; logging in still succeeds.
+    const discordUser = await client.users.fetch(user.id);
+    await discordUser.send({
+        content: [
+            "🔐 **ItamaRos Dashboard — Registration Confirmed**",
+            "",
+            "Your Discord account has been verified as a server manager",
+            "of **" + guild.name.slice(0, 100) + "**.",
+            "You now have access to the ItamaRos Staff Dashboard:",
+            "https://itamaros-tickets.onrender.com/admin",
+            "",
+            "If you did not sign in, contact the server owner and",
+            "review your Discord account security."
+        ].join("\n"),
+        allowedMentions: { parse: [] }
+    });
+    return true;
+}
+
 
 function oauthSettings() {
     const clientId = process.env.CLIENT_ID;
@@ -383,6 +423,13 @@ async function callback(req, res, url, client) {
         createdAt: new Date(),
         expiresAt: new Date(Date.now() + SESSION_TTL_MS)
     });
+    try {
+        await notifyFirstDashboardRegistration(client, staff.guild, user);
+    } catch (error) {
+        // Never disclose DM errors or block an authenticated manager.
+        console.warn("[Web Dashboard] Registration notice unavailable:",
+            String(error.message || error).slice(0, 200));
+    }
     redirect(res, "/admin", {
         "Set-Cookie": [
             cookie(AUTH_STATE_COOKIE, "", settings.secure, 0),
@@ -483,5 +530,6 @@ module.exports = {
     escapeHtml,
     safeEqual,
     initializeIndexes,
-    hash
+    hash,
+    notifyFirstDashboardRegistration
 };
