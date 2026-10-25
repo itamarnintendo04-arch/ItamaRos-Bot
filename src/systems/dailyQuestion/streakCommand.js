@@ -4,7 +4,7 @@ const {
     SlashCommandBuilder, PermissionFlagsBits, MessageFlags, EmbedBuilder
 } = require("discord.js");
 const {
-    getStreakStats, scheduleStreakDay, cancelStreak
+    getStreakStats, scheduleStreakDay, cancelStreak, retryPrizeTickets
 } = require("./streak");
 const { normalizeAnswer } = require("./quiz");
 
@@ -26,6 +26,8 @@ const data = new SlashCommandBuilder()
         .addStringOption(o => o.setName("answer")
             .setDescription("Correct answer (kept private until reveal)")
             .setMinLength(1).setMaxLength(100).setRequired(true)))
+    .addSubcommand(s => s.setName("retry-prizes")
+        .setDescription("Retry missing claim tickets for completed streaks"))
     .addSubcommand(s => s.setName("cancel")
         .setDescription("End the scheduled streak without cancelling normal quizzes"));
 
@@ -41,6 +43,13 @@ async function execute(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
         const choice = interaction.options.getSubcommand();
+        if (choice === "retry-prizes") {
+            const result = await retryPrizeTickets(interaction.guild);
+            return interaction.editReply({ content:
+                "🏆 Reward verification complete: " + result.checked +
+                " final-day answers checked, " + result.awarded +
+                " verified claims, " + result.errors + " errors." });
+        }
         if (choice === "cancel") {
             const cancelled = await cancelStreak(interaction.guildId);
             return interaction.editReply({ content: cancelled
