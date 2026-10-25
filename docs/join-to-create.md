@@ -1,33 +1,36 @@
-# Join to Create — temporary voice rooms
+# ➕ Create Your Channel — one permanent voice channel
 
-The bot automatically manages a permanent voice channel named **Create Your Channel** in the Discord guild configured by `GUILD_ID`.
+The ItamaRos Bot uses **one permanent Discord voice channel** named **➕ Create Your Channel** in the server configured by `GUILD_ID`. It does **not** create extra voice channels or move anyone elsewhere.
 
 ## Member experience
 
-1. Join **Create Your Channel**.
-2. The bot creates a separate voice channel named **<display name>'s Channel**.
-3. The bot moves you into the new channel and grants you channel-level management rights.
-4. You can rename and manage your temporary room. Other members may join.
-5. If the owner leaves while other members are inside, ownership and the channel name transfer to one of them.
-6. When the last human leaves, the temporary room is deleted. **Create Your Channel** itself remains available.
+1. The first person enters **➕ Create Your Channel**.
+2. The **same channel** changes its name to `DisplayName's Channel`.
+3. The first person becomes the **temporary owner** while they remain connected. Other members may enter without changing the owner or name.
+4. The owner can rename the room safely with `/voice-room rename name:<name>`. Use `/voice-room status` to check ownership.
+5. **When that owner leaves the voice channel, its name returns immediately to ➕ Create Your Channel**, even if other members are still inside.
+6. If others stay after the owner leaves, the room remains unclaimed with its original name. The next person to enter claims it.
+7. No voice channels are created, deleted, or moved. The Discord voice channel ID is always the same.
 
-The bot automatically rechecks rooms after reconnecting or restarting, removes empty ones and recovers ownership of occupied rooms.
+### Security
 
-## Requirements
+The member's ownership is managed by the bot. We deliberately **do not** grant `Manage Channels` to the member: that Discord permission could let them delete the shared permanent channel. The bot provides the safe rename action instead. Users can still participate in ordinary voice chat.
 
-- `GUILD_ID`: Discord server ID (already used by the bot)
-- `MONGODB_URI`: existing MongoDB connection (no new database required)
-- `BOT_AUTO_CHANNELS=true` (the default): creates or finds the voice lobby automatically
-- `CREATE_YOUR_CHANNEL_ID` (optional): ID of an existing voice lobby; the bot also persists its selection in MongoDB
+## Setup
 
-The bot's server role needs **Manage Channels** (for creating and removing rooms), **Move Members**, and access to the lobby. It must be able to set channel permission overwrites, including permissions for the temporary room owner. Check **Manage Roles** if Discord rejects setting channel permissions.
+- `GUILD_ID`: the existing server ID.
+- `MONGODB_URI`: the existing MongoDB connection.
+- `BOT_AUTO_CHANNELS=true` (default): creates the **one permanent lobby** if it does not already exist.
+- `CREATE_YOUR_CHANNEL_ID` (optional): the ID of an existing permanent voice channel. The auto-setup also records its chosen ID in MongoDB.
 
-If `BOT_AUTO_CHANNELS=false`, create a voice channel named **Create Your Channel** and configure `CREATE_YOUR_CHANNEL_ID` (or let the existing channel lookup resolve it).
+The bot needs **Manage Channels** in the voice channel to rename it. The bot also needs permission to see the voice channel and **Guild Voice States** intent.
 
-## Storage
+If `BOT_AUTO_CHANNELS=false`, create the `➕ Create Your Channel` voice channel manually and set `CREATE_YOUR_CHANNEL_ID`.
 
-Temporary room records are stored in the `temporary_voice_channels` MongoDB collection. Records do not alter ticket, giveaway, XP, or radio data.
+## Persistence
+
+Current ownership is kept in the MongoDB `voice_channel_claims` collection. The bot checks owner presence on startup and periodically; if the owner disconnected while the bot was offline, it restores the original name. It never deletes or edits the XP, tickets, giveaways, radio or older voice-room data.
 
 ## Hosting
 
-This feature requires a running Discord bot process. While the bot is offline, it cannot move members, create channels, transfer ownership, or delete empty rooms. Once it starts, it reconciles the rooms it previously created.
+This feature works only when the Discord bot is online. Simply joining a Discord support server for a hosting provider does **not** deploy or run the bot. Configure a real Node.js hosting service before expecting the voice channel to react.
