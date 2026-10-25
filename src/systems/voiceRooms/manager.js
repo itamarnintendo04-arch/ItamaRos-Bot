@@ -16,21 +16,20 @@ const BOT_PERMISSION_BITS = [
 ];
 
 const pendingCreators = new Set();
-const pendingRoomUpdates = new Set();
+const pendingRoomUpdates = new Map();
 
 const rooms = () => getDatabase().collection(COLLECTION);
 const lockKey = (guildId, memberId) => guildId + ":" + memberId;
 
 function safeRoomName(member) {
-    const displayName = String(
+    const displayName = Array.from(String(
         member?.displayName || member?.user?.globalName ||
         member?.user?.username || "Member"
     )
         .replace(/[\r\n\t]/g, " ")
         .replace(/@/g, "")
         .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 72) || "Member";
+        .trim()).slice(0, 72).join("") || "Member";
 
     return displayName + "'s Channel";
 }
@@ -200,9 +199,16 @@ function occupants(channel, departedUserId = null) {
 }
 
 async function reconcileRoom(guild, record, departedUserId = null) {
-    if (pendingRoomUpdates.has(record._id)) return;
-    pendingRoomUpdates.add(record._id);
-    try {
+    const previous = pendingRoomUpdates.get(record._id) ||
+        Promise.resolve();
+    // Serialize departures for the same voice room. In particular, when
+    // the owner and the last guest leave together, neither cleanup is lost.
+    const operation = previous.catch(() => {}).then(async () => {
+        const current = await rooms().findOne({
+            _id: record._id, guildId: guild.id
+        });
+        if (!current) return;
+
         const channel = await findChannel(guild, record._id);
         if (!isVoiceChannel(channel, guild.id)) {
             await rooms().deleteOne({ _id: record._id, guildId: guild.id });
@@ -216,7 +222,7 @@ async function reconcileRoom(guild, record, departedUserId = null) {
             return;
         }
 
-        if (members.some(member => member.id === record.ownerId)) return;
+        if (members.some(member => member.id === current.ownerId)) return;
         // Preserve an occupied room when its creator leaves by making
         // the next remaining participant the new room owner.
         const nextOwner = members[0];
@@ -229,8 +235,8 @@ async function reconcileRoom(guild, record, departedUserId = null) {
             },
             { reason: "Join to Create: new room owner" }
         );
-        if (record.ownerId !== nextOwner.id) {
-            await channel.permissionOverwrites.delete(record.ownerId,
+        if (current.ownerId !== nextOwner.id) {
+            await channel.permissionOverwrites.delete(current.ownerId,
                 "Join to Create: previous owner left").catch(error =>
                 console.warn("[Voice Rooms] Previous owner permissions:",
                     error.message)
@@ -243,7 +249,7 @@ async function reconcileRoom(guild, record, departedUserId = null) {
         await rooms().updateOne({
             _id: record._id,
             guildId: guild.id,
-            ownerId: record.ownerId
+            ownerId: current.ownerId
         }, {
             $set: {
                 ownerId: nextOwner.id,
@@ -252,10 +258,17 @@ async function reconcileRoom(guild, record, departedUserId = null) {
         });
         console.log("[Voice Rooms] Transferred " + record._id +
             " to " + nextOwner.id);
+    });
+
+    pendingRoomUpdates.set(record._id, operation);
+    try {
+        await operation;
     } catch (error) {
         console.error("[Voice Rooms] Room reconciliation failed:", error);
     } finally {
-        pendingRoomUpdates.delete(record._id);
+        if (pendingRoomUpdates.get(record._id) === operation) {
+            pendingRoomUpdates.delete(record._id);
+        }
     }
 }
 
