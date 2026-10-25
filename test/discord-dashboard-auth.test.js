@@ -33,7 +33,11 @@ function table(name) {
     return {
         createIndex: async () => "ttl_index",
         insertOne: async doc => {
-            if (rows.has(doc._id)) throw Error("duplicate");
+            if (rows.has(doc._id)) {
+                const error = Error("duplicate");
+                error.code = 11000;
+                throw error;
+            }
             rows.set(doc._id, doc);
         },
         findOne: async query => {
