@@ -46,7 +46,11 @@ const PANEL_SETTINGS = Object.freeze({
 const PUBLIC_TICKET_TYPES = Object.freeze([
     TICKET_TYPES.REPORT.id,
     TICKET_TYPES.MANAGEMENT.id,
-    TICKET_TYPES.PARTNERSHIP.id
+    TICKET_TYPES.PARTNERSHIP.id,
+    TICKET_TYPES.SERVER_QUESTIONS.id,
+    TICKET_TYPES.DAILY_QUIZ_HELP.id,
+    TICKET_TYPES.BUG_REPORT.id,
+    TICKET_TYPES.SUGGESTION.id
 ]);
 
 const CATEGORY_DESCRIPTIONS = Object.freeze({
@@ -66,6 +70,10 @@ const CATEGORY_DESCRIPTIONS = Object.freeze({
             "Contact the server management team."
     },
 
+    server_questions: { title: "❓ General Server Questions", description: "Ask anything about the server and its rules.", menuDescription: "Ask our team about the server." },
+    daily_quiz_help: { title: "🧠 Daily Questions — Help", description: "Questions about the quiz, not prize claims.", menuDescription: "Ask about daily quiz questions." },
+    bug_report: { title: "🐛 Bug Reports", description: "Report something that is not working.", menuDescription: "Report a bot or server issue." },
+    suggestion: { title: "💡 Suggestions", description: "Share an idea to improve the community.", menuDescription: "Suggest a new improvement." },
     partnership: {
         title: "🤝 Partnerships",
         description:
