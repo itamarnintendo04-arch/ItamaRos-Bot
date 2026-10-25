@@ -92,12 +92,16 @@ delete require.cache[modulePath];
 const streak = require("../src/systems/dailyQuestion/streak");
 
 test("streak dates are consecutive and the expected number of days", () => {
-    assert.equal(streak.addDays("2026-10-31", 1), "2026-11-01");
-    assert.equal(streak.dayIndex("2026-11-01", "2026-11-03"), 2);
-    assert.equal(streak.dayIndex("2026-11-01", "2026-10-31"), -1);
+    assert.equal(streak.addDays("2026-10-31", 1), "2099-11-01");
+    assert.equal(streak.dayIndex("2099-11-01", "2099-11-03"), 2);
+    assert.equal(streak.dayIndex("2099-11-01", "2026-10-31"), -1);
+    assert.equal(streak.streakStatus({
+        startDate: "2099-11-01", endDate: "2099-11-03",
+        status: "scheduled"
+    }, "2099-11-02"), "active");
     assert.equal(streak.validDay({
-        startDate: "2026-11-01", status: "scheduled", days: 3
-    }, "2026-11-03"), 2);
+        startDate: "2099-11-01", status: "scheduled", days: 3
+    }, "2099-11-03"), 2);
 });
 
 test("only successful answers on every day unlock a single prize ticket", async () => {
@@ -105,7 +109,7 @@ test("only successful answers on every day unlock a single prize ticket", async 
     const winner = { id: "winner" };
     const partial = { id: "partial" };
 
-    await streak.startStreak(guild.id, "2026-11-01", 3, "manager");
+    await streak.startStreak(guild.id, "2099-11-01", 3, "manager");
     await streak.scheduleStreakDay(guild.id, 2,
         "What is the second question?", "second", "manager");
     const summary = await streak.getStreakStats(guild.id);
@@ -113,25 +117,25 @@ test("only successful answers on every day unlock a single prize ticket", async 
     assert.equal(summary.schedule[1].prepared, true);
 
     for (let i = 0; i < 3; i++) {
-        const date = streak.addDays("2026-11-01", i);
+        const date = streak.addDays("2099-11-01", i);
         await db.collection("daily_quiz_winners").insertOne({
             _id: guild.id + ":" + date + ":" + winner.id,
             quizId: guild.id + ":" + date, userId: winner.id
         });
     }
     await db.collection("daily_quiz_winners").insertOne({
-        _id: guild.id + ":2026-11-03:" + partial.id,
-        quizId: guild.id + ":2026-11-03", userId: partial.id
+        _id: guild.id + ":2099-11-03:" + partial.id,
+        quizId: guild.id + ":2099-11-03", userId: partial.id
     });
 
-    const notEligible = await streak.recordCorrectAnswer(guild, partial, "2026-11-03");
+    const notEligible = await streak.recordCorrectAnswer(guild, partial, "2099-11-03");
     assert.equal(notEligible.won, undefined);
     assert.equal(notEligible.eligible, false);
 
-    const reward = await streak.recordCorrectAnswer(guild, winner, "2026-11-03");
+    const reward = await streak.recordCorrectAnswer(guild, winner, "2099-11-03");
     assert.equal(reward.won, true);
     assert.equal(reward.channelId, "ticket-1");
-    const twice = await streak.recordCorrectAnswer(guild, winner, "2026-11-03");
+    const twice = await streak.recordCorrectAnswer(guild, winner, "2099-11-03");
     assert.equal(twice.channelId, "ticket-1");
     assert.equal(createdCount, 1);
 });
