@@ -17,6 +17,8 @@ const {
 } = require("../src/systems/tickets/forms");
 const { buildTicketPanel } =
     require("../src/systems/tickets/panel");
+const { buildWelcomeEmbed } =
+    require("../src/systems/tickets/create");
 
 test("server questions and Daily Quiz help have their own required question fields", () => {
     for (const type of [
@@ -63,5 +65,31 @@ test("streak and dashboard command builders expose manager-only commands", () =>
         const data = command.toJSON();
         assert.ok(data.default_member_permissions != null);
         assert.ok(data.options.length >= 2);
+    }
+});
+
+test("new ticket embeds present the exact question from each English form", () => {
+    const fields = [
+        [TICKET_TYPES.SERVER_QUESTIONS,
+            { question: "Where do I find the server rules?" },
+            "What is your question about the server?"],
+        [TICKET_TYPES.DAILY_QUIZ_HELP,
+            { question: "How do Daily Quiz streaks work?" },
+            "What is your daily quiz question?"],
+        [TICKET_TYPES.BUG_REPORT,
+            { question: "Buttons do not work" },
+            "What is not working?"],
+        [TICKET_TYPES.SUGGESTION,
+            { question: "Please add community events" },
+            "What would you like to suggest?"]
+    ];
+    for (const [type, answers, expected] of fields) {
+        const embed = buildWelcomeEmbed(
+            type, "123456789012345678", answers, "test-session",
+            "876543210987654321"
+        ).toJSON();
+        assert.ok(embed.description.includes(expected),
+            "Missing form question for " + type.id);
+        assert.ok(embed.description.includes(answers.question));
     }
 });
