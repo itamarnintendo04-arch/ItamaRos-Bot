@@ -1,22 +1,18 @@
-# ItamaRos Bot: MongoDB-backed, progressive XP and chat rewards
+# ItamaRos Bot — XP progression and chat activity
 
-The XP system is **unlimited in gameplay levels**. XP and activity records
-are stored in MongoDB, never in an in-memory map or local JSON file.
-There is only a JavaScript/Mongo numeric precision boundary
-(`Number.MAX_SAFE_INTEGER`), not a configured rank cap.
+The bot keeps earned XP in MongoDB. Existing XP balances are preserved.
+A member's displayed level is recalculated using the current progression.
 
-## Level requirements
+## Levels get more demanding
 
-The first three levels cost **50 XP per level**. The requirement then
-increases by **50 XP** in stages:
+Every step **doubles the previous XP requirement** instead of adding a
+constant amount.
 
-- **Levels 1–15:** every 3 levels the XP price rises by 50.
-- **Levels 16–30:** every 2 levels the XP price rises by 50.
-- **Levels 31 onward:** every single level adds another 50 XP.
+- Levels 1–15: requirement doubles **every 3 levels**.
+- Levels 16–30: requirement doubles **every 2 levels**.
+- Level 31 onward: requirement doubles **every level**.
 
-These stages are continuous. Progression never resets at a stage boundary.
-
-| New XP level | Added XP | Total XP |
+| New level | Additional XP | Total XP needed |
 | --- | ---: | ---: |
 | 1 | 50 | 50 |
 | 2 | 50 | 100 |
@@ -24,63 +20,59 @@ These stages are continuous. Progression never resets at a stage boundary.
 | 4 | 100 | 250 |
 | 5 | 100 | 350 |
 | 6 | 100 | 450 |
-| 7 | 150 | 600 |
-| 9 | 150 | 900 |
-| 10 | 200 | 1,100 |
-| 15 | 250 | 2,250 |
-| 16 | 300 | 2,550 |
-| 17 | 300 | 2,850 |
-| 18 | 350 | 3,200 |
-| 30 | 650 | 9,200 |
-| 31 | 700 | 9,900 |
-| 32 | 750 | 10,650 |
+| 7 | 200 | 650 |
+| 10 | 400 | 1,450 |
+| 13 | 800 | 3,050 |
+| 15 | 800 | 4,650 |
+| 16 | 1,600 | 6,250 |
+| 17 | 1,600 | 7,850 |
+| 18 | 3,200 | 11,050 |
+| 30 | 204,800 | 615,850 |
+| 31 | 409,600 | 1,025,450 |
+| 32 | 819,200 | 1,844,650 |
 
-`src/systems/xp/progression.js` is the single source of truth for
-the maths. `/level`, `/xp-leaderboard`, role milestones, Kings
-rank checks and minimum-level giveaway eligibility read the same
-progressive level formula.
+These exponential requirements get very large. There is no hard-coded
+gameplay level maximum, but the current MongoDB/JavaScript XP representation
+uses numbers and cannot safely represent an arbitrarily large value:
+the maximum precisely representable integer XP is
+`Number.MAX_SAFE_INTEGER`. This imposes a **technical ceiling** that
+requires a future BigInt/string-backed schema to go beyond safely.
 
-## Increasing chat-activity rewards
+`src/systems/xp/progression.js` defines the thresholds. Both the
+member level and the Kings rank progression use that formula.
 
-Every eligible message earns progressively more XP:
+## Increasing XP from real chat participation
 
-- First eligible message: **5 XP**.
-- Second: **6 XP**.
-- Third: **7 XP**.
-- Each new eligible message increases the award by **1 XP**.
+An eligible message grants **5 XP** initially. Each subsequently
+credited message gives 1 XP more: 5, 6, 7, 8 and so forth.
 
-Spam safeguards: **60-second cooldown**, minimum message length,
-blocked-word validation, ignore bots/webhooks, and reject an
-immediately repeated message after normalization. Rewards depend
-only on *eligible* messages, not messages spammed during cooldown.
+Eligibility includes a 60-second cooldown, a minimum of three
+characters, a word filter, and repeated-message checks. Repeating a
+message or sending messages during cooldown does not increase the award.
 
-The MongoDB `member_xp` collection stores per-guild/member:
+MongoDB collection `member_xp` stores:
 
-- `xp`: total XP (never reset during this migration).
-- `activityXp`: earned activity XP (used for rank milestone checks).
-- `bonusXpAwarded`: extra XP from milestone/shop rewards; does
-  not advance activity-only tiers.
-- `messageXpAwards`: count of eligible, XP-awarded chat messages.
-- `lastMessageXp`: amount granted by the latest eligible message.
-- `lastMessageXpAt`: date of the last grant.
-- `lastXpMessageHash`: a hash of the last credited message to
-  detect exact repeats without storing its text.
+- `xp`: total XP (not reset during migration).
+- `activityXp`: chat/staff activity XP, excluding shop/milestone bonuses.
+- `bonusXpAwarded`: awarded bonus XP.
+- `messageXpAwards`: persisted number of messages granted XP.
+- `lastMessageXp`: XP from the latest eligible message.
+- `lastMessageXpAt`: last award time.
+- `lastXpMessageHash`: normalized SHA-256 content hash for repeat detection.
 
-Each successful message grant atomically updates its XP and activity
-counter in a MongoDB update pipeline. Stats survive Render restarts.
-Existing users keep their accumulated XP, though their *displayed*
-XP level is recalculated using the newer threshold formula.
-Users whose old profiles lack `messageXpAwards` start the new growing
-chat-award counter at zero (existing XP is preserved).
+The next-message grant and count survive bot/Render restarts.
+Old profiles without `messageXpAwards` start the *new escalating
+chat counter* at zero while preserving accumulated XP.
 
-## Kings compatibility
+`/level` shows the level, progress, next requirement,
+total XP and next chat message's award.
 
-Kings role progression remains a separate set of **five** roles
-and categories. They correspond to first four activity-level
-milestones: 0 / 50 / 100 / 150 / 250 activity XP. Kings Level 5
-is the maximum Kings *rank*, not the maximum regular XP level.
+Kings is a **separate five-rank system**, using activity XP thresholds
+0 / 50 / 100 / 150 / 250. Its five tiers do not cap the main XP system.
 
-## Testing
+## QA
 
-Run `npm test` (Node 22+) to verify boundary values, stage
-transitions, unlimited levels and chat reward calculations.
+GitHub Actions `ItamaRos Bot Checks` runs JavaScript syntax checks
+and `npm test` for progression, MongoDB activity rules, quiz prize streak
+and Discord command/form smoke tests. Live tests in the configured
+Discord guild must still be performed after a Render deployment.
