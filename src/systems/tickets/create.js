@@ -620,5 +620,6 @@ async function createTicket(interaction, ticketData) {
 }
 
 module.exports = {
-    createTicket
+    createTicket,
+    buildWelcomeEmbed
 };
