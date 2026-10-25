@@ -17,7 +17,7 @@ const SECTIONS = Object.freeze([
     ["invites", "Invites", "🎟️"],
     ["youtube", "YouTube", "📺"],
     ["moderation", "Moderation", "🛡️"],
-    ["setup", "Setup", "⚙️"]
+    ["setup", "Setup", "⚙️"], ["tools", "Staff Tools", "🛠️"]
 ]);
 const format = n => Number(n || 0).toLocaleString("en-US");
 const guildId = () => process.env.GUILD_ID;
@@ -40,6 +40,20 @@ const outputCount = v => v === null ? "Unavailable" : format(v);
 
 async function stats(guild, section) {
     const id = guild.id;
+    if (section === "tools") {
+        return [
+            "**One-click staff tools**",
+            "Use the action buttons beneath this panel to:",
+            "• Publish updated English support ticket forms.",
+            "• Refresh the interactive Item Store.",
+            "• Recover eligible Daily Quiz streak prize tickets.",
+            "• Reconnect continuous Radio playback.",
+            "",
+            "These actions require Manage Server permission.",
+            "For detailed configuration use /store-admin, /quiz-streak,",
+            "/giveaway-admin, /radio-admin and /dashboard."
+        ];
+    }
     if (section === "xp") {
         const [profiles, claims] = await Promise.all([
             count("member_xp", { guildId: id }),
@@ -216,6 +230,19 @@ function buttons(active) {
             .setStyle(id === active ? ButtonStyle.Primary : ButtonStyle.Secondary));
     actions.push(new ButtonBuilder().setCustomId("dash:refresh")
         .setLabel("Refresh").setEmoji("🔄").setStyle(ButtonStyle.Success));
+    if (active === "tools") {
+        const tools = [
+            ["support", "Update Support", "🎫"],
+            ["store", "Refresh Store", "🛒"],
+            ["prizes", "Retry Prizes", "🏆"],
+            ["radio", "Restart Radio", "📻"]
+        ];
+        for (const [id, label, emoji] of tools) {
+            actions.push(new ButtonBuilder().setCustomId("dash:action:" + id)
+                .setLabel(label).setEmoji(emoji)
+                .setStyle(ButtonStyle.Success));
+        }
+    }
     const rows = [];
     for (let start = 0; start < actions.length; start += 5) {
         rows.push(new ActionRowBuilder().addComponents(...actions.slice(start, start + 5)));
@@ -301,6 +328,48 @@ async function interaction(interaction) {
         return true;
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (id.startsWith("dash:action:")) {
+        const action = id.slice("dash:action:".length);
+        try {
+            let outcome;
+            if (action === "support") {
+                const { refreshTicketPanel } =
+                    require("../../events/ticketPanelRefreshReady");
+                const channel = await refreshTicketPanel(interaction.client);
+                outcome = "✅ English support panel updated in <#" + channel.id + ">.";
+            } else if (action === "store") {
+                const { refreshStorePanel } = require("../economy/storePanel");
+                const changed = await refreshStorePanel(interaction.guild);
+                if (!changed) throw Error("Shop panel channel was not found.");
+                outcome = "✅ Item Store panel refreshed.";
+            } else if (action === "prizes") {
+                const { retryPrizeTickets } = require("../dailyQuestion/streak");
+                const result = await retryPrizeTickets(interaction.guild);
+                outcome = "🏆 Checked " + result.checked + " final-day answers; " +
+                    result.awarded + " verified tickets, " + result.errors + " errors.";
+            } else if (action === "radio") {
+                const player = require("../radio/player");
+                const { startRadio, status } = require("../../events/radioReady");
+                player.stop();
+                const connected = await startRadio(interaction.client);
+                outcome = connected ? "✅ Radio reconnected." :
+                    "⚠️ Radio restart failed: " +
+                    (status().lastError || "Review /radio-admin status.");
+            } else {
+                outcome = "❌ Unknown dashboard action.";
+            }
+            await interaction.editReply({
+                content: outcome, allowedMentions: { parse: [] }
+            });
+        } catch (error) {
+            console.error("[Dashboard] Staff tool failed:", action, error);
+            await interaction.editReply({
+                content: "❌ " + String(error.message || error).slice(0, 350),
+                allowedMentions: { parse: [] }
+            });
+        }
+        return true;
+    }
     const section = id === "dash:refresh" ? "overview" : id.slice(5);
     if (!SECTIONS.some(entry => entry[0] === section)) {
         await interaction.editReply({ content: "Unknown dashboard section." });
