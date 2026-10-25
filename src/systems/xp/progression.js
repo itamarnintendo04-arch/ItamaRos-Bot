@@ -1,77 +1,71 @@
 "use strict";
 
-// Unlimited gameplay levels with increasingly demanding XP requirements.
-//
-// Levels 1-15: difficulty rises by +50 XP after each group of three.
-// Levels 16-30: difficulty rises by +50 XP after each group of two.
-// Levels 31+: difficulty rises by +50 XP after each level.
-//
-// Each group is calculated from the previous group: there are no resets.
+// Progressive XP difficulty: double the previous requirement whenever a new
+// interval begins. The interval shrinks as the member progresses:
+// level 1-15: every three levels, 16-30: every two, 31+: every one.
+// Only safe integer XP balances are stored in MongoDB (a technical boundary).
 const XP_PER_LEVEL = 50;
-const XP_GROWTH_PER_LEVEL = 50;
+const XP_GROWTH_PER_LEVEL = 2; // multiplier, not an additive amount
 const THREE_LEVEL_PHASE_END = 15;
 const TWO_LEVEL_PHASE_END = 30;
-
-// JavaScript/MongoDB numbers require a finite technical safety boundary;
-// this is NOT a configured level cap.
 const MAX_XP = Number.MAX_SAFE_INTEGER;
+
+const FIRST_PHASE_TOTAL = 3 * XP_PER_LEVEL * (2 ** 5 - 1); // 4,650
+const SECOND_PHASE_TOTAL = FIRST_PHASE_TOTAL +
+    2 * 1600 * (2 ** 7 - 1) + 1600 * 2 ** 7; // 615,850
 
 function safeXp(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) return 0;
     return Math.max(0, Math.min(MAX_XP, Math.floor(value)));
 }
 
-function xpRequiredForLevel(level) {
+function ensureLevel(level) {
     if (!Number.isSafeInteger(level) || level < 0) {
         throw new RangeError("Invalid XP level.");
     }
+}
+
+function xpRequiredForLevel(level) {
+    ensureLevel(level);
     if (level < THREE_LEVEL_PHASE_END) {
-        return XP_PER_LEVEL + XP_GROWTH_PER_LEVEL * Math.floor(level / 3);
+        return XP_PER_LEVEL * 2 ** Math.floor(level / 3);
     }
     if (level < TWO_LEVEL_PHASE_END) {
-        return 300 + XP_GROWTH_PER_LEVEL * Math.floor((level - 15) / 2);
+        return 1600 * 2 ** Math.floor((level - 15) / 2);
     }
-    return 700 + XP_GROWTH_PER_LEVEL * (level - 30);
+    return 409600 * 2 ** (level - TWO_LEVEL_PHASE_END);
 }
 
 function totalXpForLevel(level) {
-    if (!Number.isSafeInteger(level) || level < 0) {
-        throw new RangeError("Invalid XP level.");
-    }
+    ensureLevel(level);
     if (level <= THREE_LEVEL_PHASE_END) {
-        const wholeGroups = Math.floor(level / 3);
-        const remaining = level % 3;
-        // Three levels at each of 50, 100, 150, 200, 250 XP.
-        return 75 * wholeGroups * (wholeGroups + 1) +
-            remaining * 50 * (wholeGroups + 1);
+        const groups = Math.floor(level / 3);
+        const remainder = level % 3;
+        return 3 * XP_PER_LEVEL * (2 ** groups - 1) +
+            remainder * XP_PER_LEVEL * 2 ** groups;
     }
-
-    // First 15 levels cost 2,250 XP in total.
     if (level <= TWO_LEVEL_PHASE_END) {
         const count = level - THREE_LEVEL_PHASE_END;
         const pairs = Math.floor(count / 2);
-        const remaining = count % 2;
-        return 2250 + 600 * pairs + 50 * pairs * (pairs - 1) +
-            remaining * (300 + 50 * pairs);
+        const remainder = count % 2;
+        return FIRST_PHASE_TOTAL + 3200 * (2 ** pairs - 1) +
+            remainder * 1600 * 2 ** pairs;
     }
-
-    // Levels 16-30 cost 6,950 additional XP.
-    const count = level - TWO_LEVEL_PHASE_END;
-    return 9200 + 700 * count + 25 * count * (count - 1);
+    return SECOND_PHASE_TOTAL +
+        409600 * (2 ** (level - TWO_LEVEL_PHASE_END) - 1);
 }
 
 function xpToLevel(value) {
     const xp = safeXp(value);
-    // Binary search avoids a loop proportional to the user's high level.
-    let lower = 0;
-    let upper = 1;
-    while (totalXpForLevel(upper) <= xp) upper *= 2;
-    while (lower + 1 < upper) {
-        const mid = Math.floor((lower + upper) / 2);
-        if (totalXpForLevel(mid) <= xp) lower = mid;
-        else upper = mid;
+    let low = 0;
+    let high = 1;
+    while (totalXpForLevel(high) <= xp) high *= 2;
+    while (low + 1 < high) {
+        const mid = Math.floor((high + low) / 2);
+        if (totalXpForLevel(mid) <= xp) low = mid;
+        else high = mid;
     }
-    return lower;
+    return low;
 }
 
 function xpProgress(value) {
@@ -80,25 +74,16 @@ function xpProgress(value) {
     const currentLevelXp = totalXpForLevel(level);
     const nextLevelXp = totalXpForLevel(level + 1);
     return {
-        xp,
-        level,
+        xp, level,
         xpInLevel: xp - currentLevelXp,
         xpRequiredThisLevel: xpRequiredForLevel(level),
         xpToNextLevel: Math.max(0, nextLevelXp - xp),
-        currentLevelXp,
-        nextLevelXp
+        currentLevelXp, nextLevelXp
     };
 }
 
 module.exports = {
-    XP_PER_LEVEL,
-    XP_GROWTH_PER_LEVEL,
-    THREE_LEVEL_PHASE_END,
-    TWO_LEVEL_PHASE_END,
-    MAX_XP,
-    safeXp,
-    xpRequiredForLevel,
-    totalXpForLevel,
-    xpToLevel,
-    xpProgress
+    XP_PER_LEVEL, XP_GROWTH_PER_LEVEL,
+    THREE_LEVEL_PHASE_END, TWO_LEVEL_PHASE_END, MAX_XP,
+    safeXp, xpRequiredForLevel, totalXpForLevel, xpToLevel, xpProgress
 };
