@@ -221,7 +221,7 @@ test("the bot ignores voice changes in other guilds", async () => {
     assert.equal(records.size, before);
 });
 
-test("re-entering uses an existing owned room rather than creating a duplicate", async () => {
+test("returning to the lobby creates a new room after ownership has transferred", async () => {
     const user = createMember("555555555555555555", "Repeat Host");
     await joinLobby(user);
     const roomId = user.voice.channelId;
@@ -234,10 +234,26 @@ test("re-entering uses an existing owned room rather than creating a duplicate",
         { guild, id: user.id, channelId: roomId },
         { guild, id: user.id, member: user, channelId: LOBBY_ID }
     );
+    assert.notEqual(user.voice.channelId, roomId);
+    assert.equal(records.get(roomId).ownerId, other.id);
+    assert.equal(records.get(user.voice.channelId).ownerId, user.id);
+    assert.equal(records.size, before + 1);
+    await leaveRoom(user);
+    await leaveRoom(other);
+});
+
+test("repeat creation attempts reuse a room that the user still owns", async () => {
+    const user = createMember("888888888888888887", "Safe Retry");
+    await joinLobby(user);
+    const roomId = user.voice.channelId;
+    // Simulate a repeated join notification before the leave has
+    // been processed: the first room is still owned by this member.
+    await user.voice.setChannel(lobby);
+    const before = records.size;
+    await manager.createRoom(lobby, user);
     assert.equal(user.voice.channelId, roomId);
     assert.equal(records.size, before);
     await leaveRoom(user);
-    await leaveRoom(other);
 });
 
 test("startup reconciliation removes abandoned empty rooms", async () => {
