@@ -134,7 +134,8 @@ async function createRoom(lobby, member) {
 
         const bot = await guild.members.fetchMe();
         if (!bot.permissions.has(P.ManageChannels) ||
-            !bot.permissions.has(P.MoveMembers)) {
+            !(bot.permissions.has(P.MoveMembers) ||
+              lobby.permissionsFor?.(bot)?.has(P.MoveMembers))) {
             throw new Error(
                 "The bot requires Manage Channels and Move Members " +
                 "to create and assign temporary voice rooms."
