@@ -20,6 +20,11 @@ const http = require("node:http");
 
 const config = require("../config");
 const { connectDatabase } = require("../database");
+const {
+  handleDashboardRequest,
+  isDashboardRequest,
+  initializeIndexes: initializeWebSessionIndexes
+} = require("./web/discordDashboardAuth");
 
 // ==========================================
 // ITAMAROS BOT - MAIN APPLICATION
@@ -229,28 +234,59 @@ for (const command of commandModules) {
 const PORT = Number(process.env.PORT) || 3000;
 
 const server = http.createServer((req, res) => {
-  res.writeHead(200, {
-    "Content-Type": "text/html; charset=utf-8"
-  });
+  if (isDashboardRequest(req)) {
+    void handleDashboardRequest(req, res, client).catch(error => {
+      console.error("[Web Dashboard] Request error:", error.message);
+      if (!res.headersSent) {
+        res.writeHead(503, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff"
+        });
+      }
+      if (!res.writableEnded) {
+        res.end("Dashboard is temporarily unavailable.");
+      }
+    });
+    return;
+  }
 
-  res.end(`
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1"
-        >
-        <title>ItamaRos Bot</title>
-      </head>
-      <body>
-        <h1>💜 ItamaRos Bot</h1>
-        <p>Discord Bot Web Service</p>
-        <p>Service is running.</p>
-      </body>
-    </html>
-  `);
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Allow": "GET, HEAD"
+    });
+    res.end("Method not allowed.");
+    return;
+  }
+
+  // Preserve a lightweight public health-check endpoint for Render.
+  if (req.url === "/health") {
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store"
+    });
+    res.end("ItamaRos Bot - Health OK");
+    return;
+  }
+
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff"
+  });
+  res.end(
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<meta name="robots" content="noindex,nofollow">' +
+    '<title>ItamaRos Bot</title></head>' +
+    '<body style="background:#100d1e;color:#f5efff;font-family:system-ui;' +
+    'display:grid;place-items:center;min-height:100vh;margin:0;text-align:center">' +
+    '<main><h1>💜 ItamaRos Bot</h1>' +
+    '<p>Discord community bot is running.</p>' +
+    '<p><a href="/admin" style="color:#bd9cff">Open secure staff dashboard</a></p>' +
+    '</main></body></html>'
+  );
 });
 
 server.listen(PORT, () => {
@@ -638,6 +674,12 @@ async function start() {
     console.log(
       "[MongoDB] Connected successfully!"
     );
+    await initializeWebSessionIndexes().catch(error => {
+      console.warn(
+        "[Web Dashboard] Session index setup failed:",
+        error.message
+      );
+    });
 
     await registerCommands();
 
