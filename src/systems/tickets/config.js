@@ -118,6 +118,58 @@ const TICKET_TYPES = {
         ]
     },
 
+    SERVER_QUESTIONS: {
+        id: "server_questions", label: "General Server Questions", emoji: "❓",
+        publicEnabled: true, claim: true,
+        fields: [
+            { id: "question", label: "What is your question about the server?",
+              style: 2, required: true, maxLength: 1000 },
+            { id: "context", label: "Additional details (optional)",
+              style: 2, required: false, maxLength: 1000 }
+        ]
+    },
+    DAILY_QUIZ_HELP: {
+        id: "daily_quiz_help", label: "Daily Questions — Help", emoji: "🧠",
+        publicEnabled: true, claim: true,
+        fields: [
+            { id: "question", label: "What is your daily quiz question?",
+              style: 2, required: true, maxLength: 1000 },
+            { id: "quizDate", label: "Question date (optional)",
+              style: 1, required: false, maxLength: 40 }
+        ]
+    },
+    DAILY_QUIZ_REWARD: {
+        id: "daily_quiz_reward", label: "Daily Questions — Claim Prize",
+        emoji: "🏆", publicEnabled: false, claim: false,
+        automaticCreation: true, bypassActiveTicketLimit: true,
+        fields: [
+            { id: "streak", label: "Completed Daily Quiz Streak",
+              style: 1, required: true, maxLength: 100 },
+            { id: "details", label: "Reward delivery details",
+              style: 2, required: false, maxLength: 1000 }
+        ]
+    },
+    BUG_REPORT: {
+        id: "bug_report", label: "Report a Bug", emoji: "🐛",
+        publicEnabled: true, claim: true,
+        fields: [
+            { id: "question", label: "What is not working?",
+              style: 2, required: true, maxLength: 1000 },
+            { id: "steps", label: "How can we reproduce it?",
+              style: 2, required: false, maxLength: 1000 }
+        ]
+    },
+    SUGGESTION: {
+        id: "suggestion", label: "Server Suggestion", emoji: "💡",
+        publicEnabled: true, claim: true,
+        fields: [
+            { id: "question", label: "What would you like to suggest?",
+              style: 2, required: true, maxLength: 1000 },
+            { id: "benefit", label: "How would it improve the server?",
+              style: 2, required: false, maxLength: 1000 }
+        ]
+    },
+
     PARTNERSHIP: {
         id: "partnership",
         label: "Partnership",
@@ -280,6 +332,11 @@ function isPublicTicketType(typeId) {
     return getTicketType(typeId)?.publicEnabled === true;
 }
 
+function isAutomaticOnlyTicketType(typeId) {
+    return typeId === TICKET_TYPES.GIVEAWAY.id ||
+        typeId === TICKET_TYPES.DAILY_QUIZ_REWARD.id;
+}
+
 function isGiveawayTicketType(typeId) {
     return typeId === TICKET_TYPES.GIVEAWAY.id;
 }
@@ -295,5 +352,6 @@ module.exports = {
     getTicketType,
     getPublicTicketTypes,
     isPublicTicketType,
-    isGiveawayTicketType
+    isGiveawayTicketType,
+    isAutomaticOnlyTicketType
 };
