@@ -205,8 +205,33 @@ async function recordCorrectAnswer(guild, user, date) {
         eligible: true, won: true, channelId };
 }
 
+async function retryPrizeTickets(guild) {
+    const streak = await getStreak(guild.id);
+    if (!streak || streak.status === "cancelled" ||
+        new Date().toISOString().slice(0, 10) < streak.endDate) {
+        return { checked: 0, awarded: 0, errors: 0 };
+    }
+    const rows = await winners()
+        .find({ quizId: guild.id + ":" + streak.endDate })
+        .limit(1000).toArray();
+    const result = { checked: 0, awarded: 0, errors: 0 };
+    for (const row of rows) {
+        result.checked++;
+        try {
+            const member = await guild.members.fetch(row.userId).catch(() => null);
+            if (!member) continue;
+            const progress = await recordCorrectAnswer(guild, member.user, streak.endDate);
+            if (progress?.won && progress.channelId) result.awarded++;
+        } catch (error) {
+            result.errors++;
+            console.error("[Daily Quiz] Could not retry prize:", row.userId, error);
+        }
+    }
+    return result;
+}
+
 module.exports = {
     MIN_DAYS, MAX_DAYS, addDays, dayIndex, getStreak, validDay,
     startStreak, scheduleStreakDay, getStreakStats, cancelStreak,
-    recordCorrectAnswer, rewardTicket
+    recordCorrectAnswer, rewardTicket, retryPrizeTickets
 };
