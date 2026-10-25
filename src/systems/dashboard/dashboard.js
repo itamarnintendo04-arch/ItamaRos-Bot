@@ -62,7 +62,7 @@ async function stats(guild, section) {
         return [
             "**XP profiles:** " + outputCount(profiles),
             "**Milestone claims:** " + outputCount(claims),
-            "**Progression:** +50 initial XP; requirement doubles every 3/2/1 levels.",
+            "**Progression:** Starts at 50 XP; requirement doubles every 3/2/1 levels.",
             "**Chat rewards:** 5, 6, 7 XP and growing for eligible messages.",
             "**Commands:** /level, /xp-leaderboard, /xp add/remove/set",
             "**Storage:** MongoDB member_xp"
