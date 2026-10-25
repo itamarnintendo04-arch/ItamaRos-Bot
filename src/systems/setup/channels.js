@@ -85,10 +85,10 @@ const SPECIFICATIONS = Object.freeze([
         intro: "📻 **ItamaRos Radio**\n\nJoin this voice channel to listen to the radio. Playback starts automatically when the bot has licensed music available."
     },
     {
-        key: "create-your-channel", name: "Create Your Channel",
+        key: "create-your-channel", name: "➕ Create Your Channel",
         env: "CREATE_YOUR_CHANNEL_ID",
         type: "voice", policy: "joinToCreate",
-        intro: "Join to create a temporary voice room named after you. Your room closes when empty."
+        intro: "This permanent voice channel is renamed after its first participant, then restored when that participant leaves."
     }
 ]);
 
@@ -288,7 +288,7 @@ async function permissionOverwrites(guild, botId, spec, kingsRole) {
             { id: guild.id, allow: [P.ViewChannel, P.Connect] },
             {
                 ...bot,
-                allow: [...bot.allow, P.ManageChannels, P.MoveMembers]
+                allow: [...bot.allow, P.ManageChannels]
             }
         ];
     }
