@@ -256,7 +256,7 @@ async function findActiveTicket(guild, userId) {
         guildId: guild.id,
         userId,
         status: "open",
-        type: { $ne: TICKET_TYPES.GIVEAWAY.id }
+        type: { $nin: [TICKET_TYPES.GIVEAWAY.id, TICKET_TYPES.DAILY_QUIZ_REWARD.id] }
     }).toArray();
 
     let count = 0;
@@ -302,7 +302,7 @@ async function findReusableChannel(guild, userId) {
         guildId: guild.id,
         userId,
         status: "closed",
-        type: { $ne: TICKET_TYPES.GIVEAWAY.id }
+        type: { $nin: [TICKET_TYPES.GIVEAWAY.id, TICKET_TYPES.DAILY_QUIZ_REWARD.id] }
     }).sort({
         updatedAt: -1
     }).limit(10).toArray();
