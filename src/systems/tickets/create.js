@@ -372,8 +372,10 @@ function buildWelcomeEmbed(type, userId, answers, sessionId, botId) {
     ];
 
     for (const [key, value] of Object.entries(answers)) {
+        const question = type.fields?.find(field => field.id === key)?.label
+            || key;
         const line =
-            `**${cleanText(key, 80)}:** ${cleanText(value)}`;
+            `**${cleanText(question, 90)}:** ${cleanText(value)}`;
 
         if (
             [...lines, line].join("\n").length >
