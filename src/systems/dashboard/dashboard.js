@@ -243,6 +243,25 @@ function buttons(active) {
                 .setStyle(ButtonStyle.Success));
         }
     }
+    // The link never grants access. Discord OAuth2 checks the user's
+    // current Manage Server permission before showing web stats.
+    const redirectUri = process.env.DASHBOARD_REDIRECT_URI;
+    if (redirectUri) {
+        try {
+            const url = new URL(redirectUri);
+            if (url.protocol === "https:" &&
+                url.pathname === "/admin/callback") {
+                actions.push(new ButtonBuilder()
+                    .setStyle(ButtonStyle.Link)
+                    .setURL(url.origin + "/admin")
+                    .setLabel("Secure Web Login")
+                    .setEmoji("🔐"));
+            }
+        } catch {
+            console.warn("[Dashboard] Ignoring invalid web dashboard URL.");
+        }
+    }
+
     const rows = [];
     for (let start = 0; start < actions.length; start += 5) {
         rows.push(new ActionRowBuilder().addComponents(...actions.slice(start, start + 5)));
