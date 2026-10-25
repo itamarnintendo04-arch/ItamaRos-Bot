@@ -209,7 +209,7 @@ async function handleTicketSelect(interaction) {
 
     const type = getTicketType(selectedType);
 
-    if (!type) {
+    if (!type || type.publicEnabled !== true) {
         await respondPrivately(
             interaction,
             MESSAGES.INVALID_TYPE
