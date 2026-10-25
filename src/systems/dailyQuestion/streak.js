@@ -6,6 +6,23 @@ const { createTicket } = require("../tickets/create");
 const MIN_DAYS = 2;
 const MAX_DAYS = 30;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const dateClock = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit",
+    day: "2-digit"
+});
+function quizToday() {
+    const parts = Object.fromEntries(dateClock.formatToParts(new Date())
+        .filter(part => part.type !== "literal")
+        .map(part => [part.type, part.value]));
+    return parts.year + "-" + parts.month + "-" + parts.day;
+}
+function streakStatus(streak, now = quizToday()) {
+    if (!streak || streak.status === "cancelled") return "cancelled";
+    if (now < streak.startDate) return "scheduled";
+    if (now > streak.endDate) return "completed";
+    return "active";
+}
+
 
 const streaks = () => getDatabase().collection("daily_quiz_streaks");
 const quizzes = () => getDatabase().collection("daily_quizzes");
@@ -77,7 +94,7 @@ async function scheduleStreakDay(guildId, number, question, answer, managerId) {
     if (old?.publishedAt || old?.publishing || old?.messageId) {
         throw new Error("The selected day's question has already been published.");
     }
-    if (date < new Date().toISOString().slice(0, 10) ||
+    if (date < quizToday() ||
         !String(question).trim() || !String(answer).trim()) {
         throw new Error("Enter a valid future date, question and answer.");
     }
@@ -102,7 +119,8 @@ async function getStreakStats(guildId) {
         data.push({ number: i + 1, date, prepared: Boolean(quiz?.question &&
             quiz?.answer), published: Boolean(quiz?.messageId) });
     }
-    return { ...streak, daysPrepared: data.filter(x=>x.prepared).length, schedule: data };
+    return { ...streak, status: streakStatus(streak),
+        daysPrepared: data.filter(x=>x.prepared).length, schedule: data };
 }
 
 async function cancelStreak(guildId) {
@@ -231,7 +249,8 @@ async function retryPrizeTickets(guild) {
 }
 
 module.exports = {
-    MIN_DAYS, MAX_DAYS, addDays, dayIndex, getStreak, validDay,
+    MIN_DAYS, MAX_DAYS, addDays, dayIndex, quizToday, streakStatus,
+    getStreak, validDay,
     startStreak, scheduleStreakDay, getStreakStats, cancelStreak,
     recordCorrectAnswer, rewardTicket, retryPrizeTickets
 };
