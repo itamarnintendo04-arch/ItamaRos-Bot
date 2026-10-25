@@ -434,8 +434,18 @@ async function createTicket(interaction, ticketData) {
 
     // Giveaway tickets are never created
     // through the public ticket form.
-    if (ticketType.id === TICKET_TYPES.GIVEAWAY.id) {
+    if (ticketType.id === TICKET_TYPES.GIVEAWAY.id ||
+        (ticketType.publicEnabled !== true &&
+         ticketType.id !== TICKET_TYPES.DAILY_QUIZ_REWARD.id)) {
         return failure("GIVEAWAY_RESTRICTED");
+    }
+    const isQuizReward = ticketType.id === TICKET_TYPES.DAILY_QUIZ_REWARD.id;
+    if (isQuizReward) {
+        const claim = ticketData.rewardClaimId && await getDatabase()
+            .collection("daily_quiz_reward_claims")
+            .findOne({ _id: ticketData.rewardClaimId, userId: user.id,
+                guildId: guild.id, status: { $in: ["pending", "creating", "created"] } });
+        if (!claim) return failure("PRIZE_NOT_VERIFIED");
     }
 
     const answers = ticketData.answers;
@@ -481,13 +491,13 @@ async function createTicket(interaction, ticketData) {
             Number(TICKET_SETTINGS.MAX_ACTIVE_TICKETS) || 1
         );
 
-        if (active.count >= maximum) {
+        if (!isQuizReward && active.count >= maximum) {
             return failure("ACTIVE_TICKET", {
                 channel: active.channel
             });
         }
 
-        channel = await findReusableChannel(
+        channel = isQuizReward ? null : await findReusableChannel(
             guild,
             user.id
         );
@@ -496,7 +506,7 @@ async function createTicket(interaction, ticketData) {
             reused = true;
         }
 
-        if (!channel) {
+        if (!channel && !isQuizReward) {
             channel = await findRecoverableChannel(
                 guild,
                 getTicketTopic(guild.id, user.id)
@@ -537,8 +547,9 @@ async function createTicket(interaction, ticketData) {
             sessionId,
             claimedBy: null,
 
-            autoCreated: false,
-            source: "public_panel",
+            autoCreated: isQuizReward,
+            source: isQuizReward ? "daily_quiz_streak" : "public_panel",
+            ...(isQuizReward ? { rewardClaimId: ticketData.rewardClaimId } : {}),
 
             createdAt: now,
             updatedAt: now
