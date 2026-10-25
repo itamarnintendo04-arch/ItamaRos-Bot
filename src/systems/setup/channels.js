@@ -83,6 +83,12 @@ const SPECIFICATIONS = Object.freeze([
         env: "RADIO_VOICE_CHANNEL_ID",
         type: "voice", policy: "radio",
         intro: "📻 **ItamaRos Radio**\n\nJoin this voice channel to listen to the radio. Playback starts automatically when the bot has licensed music available."
+    },
+    {
+        key: "create-your-channel", name: "Create Your Channel",
+        env: "CREATE_YOUR_CHANNEL_ID",
+        type: "voice", policy: "joinToCreate",
+        intro: "Join to create a temporary voice room named after you. Your room closes when empty."
     }
 ]);
 
@@ -105,7 +111,11 @@ const CHANNEL_ALIASES = Object.freeze({
     "kings-giveaways": ["kings-giveaways", "king-giveaways", "הגרלות-מלכים"],
     "kings-drops": ["kings-drops", "king-drops", "דרופים-מלכים"],
     "kings-shop": ["kings-shop", "king-shop", "חנות-מלכים"],
-    radio: ["radio", "radio-station", "רדיו"]
+    radio: ["radio", "radio-station", "רדיו"],
+    "create-your-channel": [
+        "create-your-channel", "create your channel",
+        "join-to-create", "join to create", "create-channel"
+    ]
 });
 
 function normalizeChannelName(value) {
@@ -271,6 +281,15 @@ async function permissionOverwrites(guild, botId, spec, kingsRole) {
             { id: guild.id, allow: [P.ViewChannel, P.Connect],
                 deny: [P.Speak] },
             bot
+        ];
+    }
+    if (spec.policy === "joinToCreate") {
+        return [
+            { id: guild.id, allow: [P.ViewChannel, P.Connect] },
+            {
+                ...bot,
+                allow: [...bot.allow, P.ManageChannels, P.MoveMembers]
+            }
         ];
     }
 
