@@ -92,7 +92,7 @@ delete require.cache[modulePath];
 const streak = require("../src/systems/dailyQuestion/streak");
 
 test("streak dates are consecutive and the expected number of days", () => {
-    assert.equal(streak.addDays("2026-10-31", 1), "2099-11-01");
+    assert.equal(streak.addDays("2026-10-31", 1), "2026-11-01");
     assert.equal(streak.dayIndex("2099-11-01", "2099-11-03"), 2);
     assert.equal(streak.dayIndex("2099-11-01", "2026-10-31"), -1);
     assert.equal(streak.streakStatus({
