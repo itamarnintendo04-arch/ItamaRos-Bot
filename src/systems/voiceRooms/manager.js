@@ -2,41 +2,48 @@
 
 const { ChannelType, PermissionFlagsBits: P } = require("discord.js");
 const { getDatabase } = require("../../../database");
-const { ensureChannels, normalizeChannelName } = require("../setup/channels");
+const { normalizeChannelName } = require("../setup/channels");
 
-const COLLECTION = "temporary_voice_channels";
-const LOBBY_KEY = "create-your-channel";
-const USER_PERMISSION_BITS = [
-    P.ViewChannel, P.Connect, P.ManageChannels,
-    P.MoveMembers, P.MuteMembers, P.DeafenMembers
-];
-const BOT_PERMISSION_BITS = [
-    P.ViewChannel, P.Connect, P.ManageChannels,
-    P.MoveMembers, P.Speak
-];
-
-const pendingCreators = new Set();
-const pendingRoomUpdates = new Map();
-
-const rooms = () => getDatabase().collection(COLLECTION);
-const lockKey = (guildId, memberId) => guildId + ":" + memberId;
+const COLLECTION = "voice_channel_claims";
+const KEY = "create-your-channel";
+const DEFAULT_NAME = "➕ Create Your Channel";
+const locks = new Map();
+const claims = () => getDatabase().collection(COLLECTION);
+const claimId = (guildId, channelId) => guildId + ":" + channelId;
+const isVoice = channel => channel?.type === ChannelType.GuildVoice;
 
 function safeRoomName(member) {
-    const displayName = Array.from(String(
+    const display = String(
         member?.displayName || member?.user?.globalName ||
         member?.user?.username || "Member"
     )
-        .replace(/[\r\n\t]/g, " ")
+        .replace(/[\x00-\x1f\x7f]/g, " ")
         .replace(/@/g, "")
         .replace(/\s+/g, " ")
-        .trim()).slice(0, 72).join("") || "Member";
-
-    return displayName + "'s Channel";
+        .trim();
+    const name = Array.from(display).slice(0, 70).join("") || "Member";
+    return name + "'s Channel";
 }
 
-function isVoiceChannel(channel, guildId) {
-    return Boolean(channel?.guildId === guildId &&
-        channel.type === ChannelType.GuildVoice);
+function safeCustomName(input) {
+    const name = Array.from(String(input || "")
+        .replace(/[\x00-\x1f\x7f]/g, " ")
+        .replace(/@/g, "")
+        .replace(/\s+/g, " ")
+        .trim()).slice(0, 80).join("");
+    if (name.length < 2) throw Error("Channel name must be at least 2 characters.");
+    return name;
+}
+
+async function locked(channelId, callback) {
+    const prior = locks.get(channelId) || Promise.resolve();
+    const current = prior.catch(() => {}).then(callback);
+    locks.set(channelId, current);
+    try {
+        return await current;
+    } finally {
+        if (locks.get(channelId) === current) locks.delete(channelId);
+    }
 }
 
 async function findChannel(guild, id) {
@@ -45,232 +52,125 @@ async function findChannel(guild, id) {
         await guild.channels.fetch(id).catch(() => null);
 }
 
-async function resolveLobby(guild, newChannelId) {
-    if (!newChannelId) return null;
-    const savedId = process.env.CREATE_YOUR_CHANNEL_ID;
-    const known = await findChannel(guild, newChannelId);
-    // Never mistake a user's temporary room for a join-to-create lobby.
-    if (savedId && newChannelId !== savedId &&
-        normalizeChannelName(known?.name) !== LOBBY_KEY) {
+async function resolveLobby(guild, channelId) {
+    if (!channelId || guild.id !== process.env.GUILD_ID) return null;
+    const channel = await findChannel(guild, channelId);
+    if (!channel || !isVoice(channel) || channel.guildId !== guild.id) {
         return null;
     }
+    if (process.env.CREATE_YOUR_CHANNEL_ID === channelId) return channel;
 
-    let stored = null;
-    if (newChannelId !== savedId) {
-        stored = await getDatabase().collection("bot_system_channels")
-            .findOne({ _id: guild.id + ":" + LOBBY_KEY });
-    }
-
-    const isTarget = [savedId, stored?.channelId]
-        .includes(newChannelId) ||
-        normalizeChannelName(known?.name) === LOBBY_KEY;
-
-    if (isTarget && isVoiceChannel(known, guild.id)) return known;
-
-    if (process.env.BOT_AUTO_CHANNELS !== "false") {
-        const managed = await ensureChannels(guild.client);
-        const id = managed?.[LOBBY_KEY];
-        if (id && id === newChannelId) {
-            const channel = await findChannel(guild, id);
-            if (isVoiceChannel(channel, guild.id)) return channel;
-        }
-    }
-    return null;
-}
-
-function privateOverwrites(lobby, member, botId) {
-    const overwrites = new Map();
-    for (const item of lobby.permissionOverwrites?.cache?.values() || []) {
-        overwrites.set(item.id, {
-            id: item.id,
-            type: item.type,
-            allow: item.allow.bitfield,
-            deny: item.deny.bitfield
-        });
-    }
-    // Owners can manage only their personal voice channel, not the server.
-    overwrites.set(member.id, {
-        id: member.id,
-        allow: USER_PERMISSION_BITS
-    });
-    overwrites.set(botId, {
-        id: botId,
-        allow: BOT_PERMISSION_BITS
-    });
-    return [...overwrites.values()];
-}
-
-async function createRoom(lobby, member) {
-    const guild = lobby.guild;
-    const key = lockKey(guild.id, member.id);
-    if (pendingCreators.has(key)) return null;
-    pendingCreators.add(key);
-
-    let channel = null;
-    let recorded = false;
-    try {
-        // Only create for the configured server, and only while the user
-        // is still inside the Create Your Channel voice lobby.
-        if (guild.id !== process.env.GUILD_ID ||
-            member.user?.bot || member.voice.channelId !== lobby.id) {
-            return null;
-        }
-
-        // Prevent duplicate rooms for someone who re-enters the lobby.
-        const previous = await rooms().findOne({
-            guildId: guild.id, ownerId: member.id
-        });
-        if (previous) {
-            const existing = await findChannel(guild, previous._id);
-            if (isVoiceChannel(existing, guild.id)) {
-                if (member.voice.channelId === lobby.id) {
-                    await member.voice.setChannel(existing,
-                        "Return to your temporary voice room");
-                }
-                return existing;
-            }
-            await rooms().deleteOne({ _id: previous._id, guildId: guild.id });
-        }
-
-        const bot = await guild.members.fetchMe();
-        if (!bot.permissions.has(P.ManageChannels) ||
-            !(bot.permissions.has(P.MoveMembers) ||
-              lobby.permissionsFor?.(bot)?.has(P.MoveMembers))) {
-            throw new Error(
-                "The bot requires Manage Channels and Move Members " +
-                "to create and assign temporary voice rooms."
-            );
-        }
-
-        if (member.voice.channelId !== lobby.id) return null;
-
-        channel = await guild.channels.create({
-            name: safeRoomName(member),
-            type: ChannelType.GuildVoice,
-            parent: lobby.parentId || null,
-            bitrate: lobby.bitrate,
-            userLimit: lobby.userLimit || 0,
-            permissionOverwrites: privateOverwrites(
-                lobby, member, bot.id
-            ),
-            reason: "Join to Create: temporary room for " + member.id
-        });
-
-        // If they left during creation, delete the unused room.
-        if (member.voice.channelId !== lobby.id) {
-            await channel.delete("Join to Create: creator left").catch(() => {});
-            channel = null;
-            return null;
-        }
-
-        await rooms().insertOne({
-            _id: channel.id,
-            guildId: guild.id,
-            lobbyId: lobby.id,
-            ownerId: member.id,
-            createdAt: new Date()
-        });
-        recorded = true;
-        await member.voice.setChannel(channel,
-            "Join to Create: your personal voice channel");
-        console.log("[Voice Rooms] Created " + channel.name +
-            " (" + channel.id + ") for " + member.id);
+    const [stored, claim] = await Promise.all([
+        getDatabase().collection("bot_system_channels").findOne({
+            _id: guild.id + ":" + KEY
+        }),
+        claims().findOne({ _id: claimId(guild.id, channelId) })
+    ]);
+    if (stored?.channelId === channelId || claim?.channelId === channelId) {
         return channel;
-    } catch (error) {
-        console.error("[Voice Rooms] Could not create room:", error);
-        if (recorded) {
-            await rooms().deleteOne({ _id: channel.id, guildId: guild.id })
-                .catch(() => {});
-        }
-        if (channel) {
-            await channel.delete("Join to Create: setup failed")
-                .catch(() => {});
-        }
+    }
+
+    // Accept existing voice channels by name only when no different
+    // channel has been explicitly selected.
+    if (process.env.CREATE_YOUR_CHANNEL_ID || stored?.channelId) {
         return null;
-    } finally {
-        pendingCreators.delete(key);
     }
+    return ["create-your-channel", "join-to-create", "create-channel"]
+        .includes(normalizeChannelName(channel.name)) ? channel : null;
 }
 
-function occupants(channel, departedUserId = null) {
-    return [...(channel.members?.values() || [])]
-        .filter(member => !member.user?.bot &&
-            member.id !== departedUserId &&
-            member.voice?.channelId === channel.id);
+function ownerPresent(channel, ownerId, departedId = null) {
+    if (!ownerId || ownerId === departedId) return false;
+    const member = channel.members?.get(ownerId);
+    if (member?.voice?.channelId === channel.id) return true;
+    const state = channel.guild?.voiceStates?.cache?.get(ownerId);
+    return state?.channelId === channel.id;
 }
 
-async function reconcileRoom(guild, record, departedUserId = null) {
-    const previous = pendingRoomUpdates.get(record._id) ||
-        Promise.resolve();
-    // Serialize departures for the same voice room. In particular, when
-    // the owner and the last guest leave together, neither cleanup is lost.
-    const operation = previous.catch(() => {}).then(async () => {
-        const current = await rooms().findOne({
-            _id: record._id, guildId: guild.id
-        });
-        if (!current) return;
+// A permanent voice channel must never receive ManageChannels permission
+// for the claiming user: that could let them DELETE the permanent channel.
+// Ownership is logical and tracked by the bot. Owners can rename it using
+// /voice-room rename, and the original name is always restored on exit.
 
-        const channel = await findChannel(guild, record._id);
-        if (!isVoiceChannel(channel, guild.id)) {
-            await rooms().deleteOne({ _id: record._id, guildId: guild.id });
-            return;
-        }
-        const members = occupants(channel, departedUserId);
-        if (members.length === 0) {
-            await channel.delete("Join to Create: room is empty");
-            await rooms().deleteOne({ _id: record._id, guildId: guild.id });
-            console.log("[Voice Rooms] Deleted empty room " + record._id);
-            return;
-        }
-
-        if (members.some(member => member.id === current.ownerId)) return;
-        // Preserve an occupied room when its creator leaves by making
-        // the next remaining participant the new room owner.
-        const nextOwner = members[0];
-        await channel.permissionOverwrites.edit(
-            nextOwner.id,
-            {
-                ViewChannel: true, Connect: true,
-                ManageChannels: true, MoveMembers: true,
-                MuteMembers: true, DeafenMembers: true
-            },
-            { reason: "Join to Create: new room owner" }
-        );
-        if (current.ownerId !== nextOwner.id) {
-            await channel.permissionOverwrites.delete(current.ownerId,
-                "Join to Create: previous owner left").catch(error =>
-                console.warn("[Voice Rooms] Previous owner permissions:",
-                    error.message)
-            );
-        }
-        await channel.setName(
-            safeRoomName(nextOwner),
-            "Join to Create: ownership transferred"
-        );
-        await rooms().updateOne({
-            _id: record._id,
-            guildId: guild.id,
-            ownerId: current.ownerId
-        }, {
-            $set: {
-                ownerId: nextOwner.id,
-                updatedAt: new Date()
-            }
-        });
-        console.log("[Voice Rooms] Transferred " + record._id +
-            " to " + nextOwner.id);
+async function releaseUnlocked(channel, current) {
+    if (!current) return false;
+    // Keep the claim stored if Discord rejects the rename; the next event
+    // or startup reconciliation can then repair the channel safely.
+    if (channel.name !== DEFAULT_NAME) {
+        await channel.setName(DEFAULT_NAME, "Voice owner left — restore lobby");
+    }
+    await claims().deleteOne({
+        _id: claimId(channel.guild.id, channel.id),
+        ownerId: current.ownerId
     });
+    console.log("[Voice Room] Released " + channel.id +
+        " after " + current.ownerId + " left.");
+    return true;
+}
 
-    pendingRoomUpdates.set(record._id, operation);
-    try {
-        await operation;
-    } catch (error) {
-        console.error("[Voice Rooms] Room reconciliation failed:", error);
-    } finally {
-        if (pendingRoomUpdates.get(record._id) === operation) {
-            pendingRoomUpdates.delete(record._id);
-        }
+async function claimChannel(channel, member) {
+    if (!isVoice(channel) || channel.guild.id !== process.env.GUILD_ID ||
+        member.user?.bot || member.voice?.channelId !== channel.id) {
+        return false;
     }
+    return locked(channel.id, async () => {
+        if (member.voice?.channelId !== channel.id) return false;
+
+        const me = await channel.guild.members.fetchMe();
+        if (!channel.permissionsFor(me)?.has(P.ManageChannels)) {
+            throw Error("The bot needs Manage Channels in " + DEFAULT_NAME);
+        }
+
+        const id = claimId(channel.guild.id, channel.id);
+        const existing = await claims().findOne({ _id: id });
+        if (existing?.ownerId) {
+            if (ownerPresent(channel, existing.ownerId)) return false;
+            await releaseUnlocked(channel, existing);
+        }
+
+        const claimedName = safeRoomName(member);
+        // Changing the existing voice channel is the ONLY Discord channel
+        // mutation here. No create, delete or setChannel is ever called.
+        await channel.setName(claimedName,
+            "First voice participant claimed the channel");
+        try {
+            await claims().updateOne({ _id: id }, {
+                $set: {
+                    guildId: channel.guild.id,
+                    channelId: channel.id,
+                    ownerId: member.id,
+                    claimedName,
+                    claimedAt: new Date()
+                }
+            }, { upsert: true });
+        } catch (error) {
+            await channel.setName(DEFAULT_NAME,
+                "Database failed — restore voice lobby").catch(() => {});
+            throw error;
+        }
+
+        // Handle a user disconnecting while the Discord API call was in flight.
+        if (member.voice?.channelId !== channel.id) {
+            const current = await claims().findOne({ _id: id });
+            if (current?.ownerId === member.id) {
+                await releaseUnlocked(channel, current);
+            }
+            return false;
+        }
+        console.log("[Voice Room] " + member.id +
+            " claimed existing channel " + channel.id);
+        return true;
+    });
+}
+
+async function releaseChannel(channel, userId) {
+    return locked(channel.id, async () => {
+        const existing = await claims().findOne({
+            _id: claimId(channel.guild.id, channel.id)
+        });
+        if (!existing || existing.ownerId !== userId) return false;
+        return releaseUnlocked(channel, existing);
+    });
 }
 
 async function handleVoiceStateChange(oldState, newState) {
@@ -278,23 +178,57 @@ async function handleVoiceStateChange(oldState, newState) {
     if (!guild || guild.id !== process.env.GUILD_ID ||
         oldState.channelId === newState.channelId) return;
 
-    // A leave or move can empty the old room or require ownership transfer.
     if (oldState.channelId) {
-        const record = await rooms().findOne({
-            _id: oldState.channelId, guildId: guild.id
-        });
-        if (record) {
-            await reconcileRoom(guild, record, oldState.id);
+        const oldChannel = await resolveLobby(guild, oldState.channelId);
+        if (oldChannel) {
+            // Only the person who claimed it can end their ownership.
+            // Other members may stay; no new Discord channel is created.
+            await releaseChannel(oldChannel, oldState.id);
         }
     }
 
     if (newState.channelId) {
-        const lobby = await resolveLobby(guild, newState.channelId);
-        if (!lobby) return;
+        const channel = await resolveLobby(guild, newState.channelId);
+        if (!channel) return;
         const member = newState.member ||
             await guild.members.fetch(newState.id).catch(() => null);
-        if (member && !member.user?.bot) await createRoom(lobby, member);
+        if (member && !member.user?.bot) {
+            await claimChannel(channel, member);
+        }
     }
+}
+
+async function renameOwnedChannel(guild, member, name) {
+    const channel = await resolveLobby(guild, member.voice?.channelId);
+    if (!channel) throw Error("Join the Create Your Channel voice channel first.");
+    return locked(channel.id, async () => {
+        const record = await claims().findOne({
+            _id: claimId(guild.id, channel.id)
+        });
+        if (!record || record.ownerId !== member.id ||
+            member.voice?.channelId !== channel.id) {
+            throw Error("Only the current voice room owner may rename it.");
+        }
+        const newName = safeCustomName(name);
+        await channel.setName(newName, "Voice room owner renamed their channel");
+        await claims().updateOne({
+            _id: record._id, ownerId: member.id
+        }, { $set: { claimedName: newName, updatedAt: new Date() } });
+        return newName;
+    });
+}
+
+async function getOwnership(guild, member) {
+    const channel = await resolveLobby(guild, member.voice?.channelId);
+    if (!channel) return null;
+    const record = await claims().findOne({
+        _id: claimId(guild.id, channel.id)
+    });
+    return {
+        channel,
+        ownerId: record?.ownerId || null,
+        isOwner: record?.ownerId === member.id
+    };
 }
 
 async function cleanupOnStartup(client) {
@@ -302,23 +236,51 @@ async function cleanupOnStartup(client) {
     if (!guildId) return;
     const guild = await client.guilds.fetch(guildId);
     await guild.channels.fetch();
-
-    const records = await rooms().find({ guildId }).toArray();
-    for (const record of records) {
-        await reconcileRoom(guild, record);
-    }
+    const record = await getDatabase().collection("bot_system_channels")
+        .findOne({ _id: guildId + ":" + KEY });
+    const lobbyId = process.env.CREATE_YOUR_CHANNEL_ID || record?.channelId;
+    const lobby = lobbyId
+        ? await resolveLobby(guild, lobbyId)
+        : [...guild.channels.cache.values()].find(channel =>
+            isVoice(channel) &&
+            normalizeChannelName(channel.name) === KEY
+        );
+    if (!lobby) return;
+    await locked(lobby.id, async () => {
+        const existing = await claims().findOne({
+            _id: claimId(guildId, lobby.id)
+        });
+        if (existing) {
+            if (!ownerPresent(lobby, existing.ownerId)) {
+                await releaseUnlocked(lobby, existing);
+            }
+            return;
+        }
+        if (lobby.name !== DEFAULT_NAME) {
+            await lobby.setName(DEFAULT_NAME,
+                "Restore permanent Create Your Channel voice lobby");
+        }
+    });
 }
 
 async function cleanupDeletedChannel(channel) {
-    if (!channel?.guildId || channel.guildId !== process.env.GUILD_ID) return;
-    await rooms().deleteOne({ _id: channel.id, guildId: channel.guildId });
+    if (!channel?.guildId || channel.guildId !== process.env.GUILD_ID) {
+        return;
+    }
+    await claims().deleteOne({
+        _id: claimId(channel.guildId, channel.id)
+    });
 }
 
 module.exports = {
+    DEFAULT_NAME,
     safeRoomName,
+    safeCustomName,
     resolveLobby,
-    createRoom,
-    reconcileRoom,
+    claimChannel,
+    releaseChannel,
+    renameOwnedChannel,
+    getOwnership,
     handleVoiceStateChange,
     cleanupOnStartup,
     cleanupDeletedChannel
