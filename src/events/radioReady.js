@@ -20,11 +20,16 @@ async function resolveRadioChannel(client) {
 
     const guild = await client.guilds.fetch(guildId);
     let saved = null;
+    let preferred = null;
     try {
-        saved = await getDatabase().collection("bot_system_channels")
-            .findOne({ _id: guildId + ":radio" });
+        [saved, preferred] = await Promise.all([
+            getDatabase().collection("bot_system_channels")
+                .findOne({ _id: guildId + ":radio" }),
+            getDatabase().collection("radio_settings")
+                .findOne({ _id: guildId })
+        ]);
     } catch (error) {
-        console.warn("[Radio] Could not read saved radio channel:", error.message);
+        console.warn("[Radio] Could not read radio settings:", error.message);
     }
 
     let managed = {};
@@ -36,10 +41,11 @@ async function resolveRadioChannel(client) {
 
     const channels = await guild.channels.fetch();
     const candidates = [
-        managed.radio,
+        preferred?.voiceChannelId,
         process.env.RADIO_VOICE_CHANNEL_ID,
         config.voiceChannelId,
-        saved?.channelId
+        saved?.channelId,
+        managed.radio
     ].filter(Boolean);
 
     let channel = null;
@@ -68,11 +74,11 @@ async function resolveRadioChannel(client) {
     }
     if (!channel) {
         throw new Error(
-            "Radio voice channel missing. Check #radio or enable BOT_AUTO_CHANNELS."
+            "No accessible voice channel selected for Radio. " +
+            "Use /radio-admin set-channel to choose a Discord voice channel, " +
+            "or enable BOT_AUTO_CHANNELS."
         );
     }
-    // Auto-detected channel ID survives within the running process.
-    process.env.RADIO_VOICE_CHANNEL_ID = channel.id;
     return channel;
 }
 
@@ -97,17 +103,23 @@ async function startRadio(client) {
         const channel = await resolveRadioChannel(client);
         const me = await channel.guild.members.fetchMe();
         const permissions = channel.permissionsFor(me);
-        for (const required of [
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.Connect,
-            PermissionFlagsBits.Speak
-        ]) {
-            if (!permissions?.has(required)) {
-                throw new Error(
-                    "The bot needs View Channel, Connect and Speak in #" +
-                    channel.name + ". Check role and channel overrides."
-                );
-            }
+        const required = [
+            [PermissionFlagsBits.ViewChannel, "View Channel"],
+            [PermissionFlagsBits.Connect, "Connect"],
+            [PermissionFlagsBits.Speak, "Speak"]
+        ];
+        const missing = required.filter(([bit]) => !permissions?.has(bit))
+            .map(([, label]) => label);
+        if (missing.length) {
+            throw new Error("Missing voice permissions in " +
+                channel.name + " (" + channel.id + "): " +
+                missing.join(", ") + ". Check the bot role and " +
+                "channel-specific permissions.");
+        }
+        if (channel.userLimit && channel.members.size >= channel.userLimit &&
+            !permissions?.has(PermissionFlagsBits.MoveMembers)) {
+            throw new Error("The voice channel is full (user limit " +
+                channel.userLimit + "). Free a slot or grant Move Members.");
         }
 
         const tracks = radioPlayer.loadTracks();
