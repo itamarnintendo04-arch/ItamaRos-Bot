@@ -188,7 +188,7 @@ function questionEmbed(quiz, reveal = false) {
       );
 
   const eventNote = quiz.streakDay && quiz.streakDays
-    ? "\\n\\n🏆 **Prize Streak: Day " + quiz.streakDay +
+    ? "\n\n🏆 **Prize Streak: Day " + quiz.streakDay +
       "/" + quiz.streakDays + "** — Complete every day to claim a prize."
     : "";
   return new EmbedBuilder()
@@ -930,19 +930,19 @@ async function handleQuizInteraction(interaction) {
         );
         if (progress?.won) {
           detail = progress.channelId
-            ? "\\n🏆 **Prize unlocked!** Your private claim ticket: <#" +
+            ? "\n🏆 **Prize unlocked!** Your private claim ticket: <#" +
               progress.channelId + ">."
-            : "\\n🏆 **Prize unlocked!** Your ticket is being prepared.";
+            : "\n🏆 **Prize unlocked!** Your ticket is being prepared.";
         } else if (progress && progress.eligible) {
-          detail = "\\n🔥 Prize streak: " + progress.completed +
+          detail = "\n🔥 Prize streak: " + progress.completed +
             "/" + progress.days + " correct days!";
         } else if (progress) {
-          detail = "\\nℹ️ You missed an earlier streak day. " +
+          detail = "\nℹ️ You missed an earlier streak day. " +
             "Today's normal quiz result still counts.";
         }
       } catch (error) {
         console.error("[Daily Quiz] Streak ticket error:", error);
-        detail = "\\n⚠️ Your correct answer is saved, but your prize " +
+        detail = "\n⚠️ Your correct answer is saved, but your prize " +
           "ticket could not be opened automatically. Please contact staff.";
       }
       await interaction.reply(
