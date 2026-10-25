@@ -231,7 +231,7 @@ for (const command of commandModules) {
 // RENDER HTTP SERVER
 // ==========================================
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.SERVER_PORT || process.env.PORT) || 3000;
 
 const server = http.createServer((req, res) => {
   if (isDashboardRequest(req)) {
@@ -289,7 +289,7 @@ const server = http.createServer((req, res) => {
   );
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(
     `[HTTP] Listening on port ${PORT}`
   );
