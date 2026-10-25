@@ -915,6 +915,12 @@ async function handleQuizInteraction(interaction) {
       return true;
     }
 
+    // Prize ticket creation may take longer than Discord's response window.
+    // Acknowledge the modal immediately and finish privately.
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral
+    });
+
     try {
       await answers().insertOne({
         _id: `${id}:${interaction.user.id}`,
@@ -945,21 +951,19 @@ async function handleQuizInteraction(interaction) {
         detail = "\n⚠️ Your correct answer is saved, but your prize " +
           "ticket could not be opened automatically. Please contact staff.";
       }
-      await interaction.reply(
-        replyOptions(interaction,
-          "✅ Correct! You're on today's winners list! 🎉" + detail)
-      );
+      await interaction.editReply({
+        content: "✅ Correct! You're on today's winners list! 🎉" + detail,
+        allowedMentions: { parse: [] }
+      });
     } catch (error) {
       if (error.code !== 11000) {
         throw error;
       }
 
-      await interaction.reply(
-        replyOptions(
-          interaction,
-          "✅ You already answered correctly! 🎉"
-        )
-      );
+      await interaction.editReply({
+        content: "✅ You already answered correctly! 🎉",
+        allowedMentions: { parse: [] }
+      });
     }
 
     return true;
