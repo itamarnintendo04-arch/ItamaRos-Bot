@@ -13,7 +13,11 @@ const SECTIONS = Object.freeze([
     ["kings", "Kings", "👑"], ["shop", "Economy", "🛒"],
     ["giveaways", "Giveaways", "🎉"], ["drops", "Drops", "⚡"],
     ["tickets", "Tickets", "🎫"], ["quiz", "Daily Quiz", "🧠"],
-    ["radio", "Radio", "📻"]
+    ["radio", "Radio", "📻"],
+    ["invites", "Invites", "🎟️"],
+    ["youtube", "YouTube", "📺"],
+    ["moderation", "Moderation", "🛡️"],
+    ["setup", "Setup", "⚙️"]
 ]);
 const format = n => Number(n || 0).toLocaleString("en-US");
 const guildId = () => process.env.GUILD_ID;
@@ -136,6 +140,42 @@ async function stats(guild, section) {
             "**Storage:** MongoDB daily_quizzes, daily_quiz_winners, daily_quiz_streaks"
         ];
     }
+    if (section === "invites") {
+        return [
+            "**Features:** Invite tracking, invite leaderboards, welcome cards.",
+            "**Commands:** /invites user, /invites list, /invites top",
+            "**Automatic:** Member welcome DM and join information.",
+            "**Access:** Server managers only for invite management."
+        ];
+    }
+    if (section === "youtube") {
+        return [
+            "**Features:** Automatic announcements for videos, Shorts and streams.",
+            "**Channel:** #youtube-updates (managed automatically).",
+            "**Configuration:** YOUTUBE_CHANNEL_ID and YOUTUBE_API_KEY in Render.",
+            "**Privacy:** Provider secrets are never displayed here."
+        ];
+    }
+    if (section === "moderation") {
+        return [
+            "**Features:** Report tickets, word filtering, moderation logs.",
+            "**Commands:** /warn and server management commands.",
+            "**Channel:** Private #mod-log.",
+            "**Access:** Managers only."
+        ];
+    }
+    if (section === "setup") {
+        const channels = await count("bot_system_channels", { guildId: id });
+        return [
+            "**Managed channels:** " + outputCount(channels),
+            "**Server:** " + guild.name,
+            "**Identity:** Environment-configured GUILD_ID (private).",
+            "**Features:** Channel recovery, command directory, tickets, Kings",
+            "levels, giveaways, drops, radio, daily quiz, shop and invites.",
+            "**Commands:** /dashboard, /ticket, /shop-panel",
+            "**Storage:** MongoDB; deployment: Render Web Service."
+        ];
+    }
     if (section === "radio") {
         const status = radio.getStatus();
         return [
@@ -176,10 +216,11 @@ function buttons(active) {
             .setStyle(id === active ? ButtonStyle.Primary : ButtonStyle.Secondary));
     actions.push(new ButtonBuilder().setCustomId("dash:refresh")
         .setLabel("Refresh").setEmoji("🔄").setStyle(ButtonStyle.Success));
-    return [
-        new ActionRowBuilder().addComponents(...actions.slice(0, 5)),
-        new ActionRowBuilder().addComponents(...actions.slice(5, 10))
-    ];
+    const rows = [];
+    for (let start = 0; start < actions.length; start += 5) {
+        rows.push(new ActionRowBuilder().addComponents(...actions.slice(start, start + 5)));
+    }
+    return rows;
 }
 
 async function build(guild, section = "overview") {
