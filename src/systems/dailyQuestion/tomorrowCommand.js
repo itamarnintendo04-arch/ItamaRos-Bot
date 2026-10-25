@@ -11,6 +11,7 @@ const {
     getTomorrowQuizDate,
     normalizeAnswer
 } = require("./quiz");
+const { getStreak, startStreak } = require("./streak");
 
 const data = new SlashCommandBuilder()
     .setName("quiz-tomorrow")
@@ -30,7 +31,10 @@ const data = new SlashCommandBuilder()
             .setMinLength(1)
             .setMaxLength(100)
             .setRequired(true)
-    );
+    )
+    .addIntegerOption(o => o.setName("streak_days")
+        .setDescription("Start a prize streak tomorrow (2–30 consecutive days)")
+        .setMinValue(2).setMaxValue(30).setRequired(false));
 
 async function execute(interaction) {
     if (!interaction.inGuild() ||
@@ -64,6 +68,15 @@ async function execute(interaction) {
     });
 
     const date = getTomorrowQuizDate();
+    const streakDays = interaction.options.getInteger("streak_days");
+    if (streakDays) {
+        const active = await getStreak(interaction.guildId);
+        if (active && active.status !== "cancelled" && active.endDate >= date) {
+            await interaction.editReply({ content:
+                "❌ A Daily Quiz prize streak is already scheduled. Use /quiz-streak status." });
+            return;
+        }
+    }
     const id = `${interaction.guildId}:${date}`;
     const collection = getDatabase().collection("daily_quizzes");
     const current = await collection.findOne({ _id: id });
@@ -121,13 +134,27 @@ async function execute(interaction) {
         }
     }
 
+    if (streakDays) {
+        try {
+            await startStreak(interaction.guildId, date, streakDays, interaction.user.id);
+        } catch (error) {
+            await interaction.editReply({ content: "⚠️ Tomorrow\u0027s quiz was saved, but the streak could not be started: " + error.message });
+            return;
+        }
+    }
+
     await interaction.editReply({
         content: [
             `✅ **Tomorrow's quiz was saved for ${date}!**`,
             `🧠 **Question:** ${question.replace(/@/g, "@\u200b")}`,
             "🔒 Correct answer saved privately.",
-            "📅 Publishes at 07:00 (Israel time).",
-            "🏆 Answer and winners announced at 21:00."
+            "📅 Publishes at 07:00 on the server\u0027s daily schedule.",
+            "🏆 Answer and winners announced at 21:00.",
+            ...(streakDays ? [
+                "🏆 **Prize streak started:** " + streakDays + " days, beginning tomorrow.",
+                "Prepare days 2–" + streakDays + " with /quiz-streak set-day.",
+                "Correctly complete every daily question to receive a prize ticket."
+            ] : [])
         ].join("\n"),
         allowedMentions: { parse: [] }
     });
