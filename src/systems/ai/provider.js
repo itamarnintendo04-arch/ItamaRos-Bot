@@ -430,7 +430,7 @@ function parseModelResponse(value, ticket) {
 function isRepetitiveReply(reply, messages) {
     const normalize = value => String(value || "")
         .toLowerCase()
-        .replace(/[^\\p{L}\\p{N}]+/gu, " ")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
         .trim();
 
     const answer = normalize(reply);
