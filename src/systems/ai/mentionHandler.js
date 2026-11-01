@@ -358,11 +358,14 @@ function createAiMentionHandler(options = {}) {
         );
 
         if (!question) {
-            await replyToUser(
-                message,
-                "🤖 Hi! Ask me a question about the ItamaRos server."
-            ).catch(() => {});
-
+            // Don't answer empty automatic follow-ups (e.g. an attachment)
+            // with the same greeting on every message.
+            if (mentioned) {
+                await replyToUser(
+                    message,
+                    "🤖 Hi! Ask me a question about the ItamaRos server."
+                ).catch(() => {});
+            }
             return true;
         }
 
