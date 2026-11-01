@@ -396,11 +396,12 @@ function buildWelcomeEmbed(type, userId, answers, sessionId, botId) {
         "A staff member will assist you shortly.",
         "",
         "### 🤖 AI Support",
-        "Need help? **Mention <@" + botId + "> in this ticket.**",
-        "**AI support is ONLY for the ItamaRos server and this ticket category.**",
-        "The AI can read submitted form answers and",
-        "recent messages here, including staff replies.",
-        "Relevant context is sent to the configured AI provider.",
+        "Need help? **Mention <@" + botId + "> once to start a conversation.**",
+        "After that, keep chatting without another mention for 30 minutes",
+        "after each AI reply. You can ask about any ItamaRos server topic.",
+        "AI uses recent messages, including its own replies,",
+        "to understand follow-up questions.",
+        "Ticket context is sent to the configured AI provider.",
         "",
         "🔒 Only authorized staff can close this ticket."
     );
