@@ -1,10 +1,11 @@
 
 "use strict";
 
-const { PermissionFlagsBits } = require("discord.js");
-const { getTicketType } = require("../tickets/config");
+const { ChannelType, PermissionFlagsBits } = require("discord.js");
+const { getTicketType, getPublicTicketTypes } = require("../tickets/config");
 
-const MAX_MESSAGES = 14;
+const MAX_MESSAGES = 30;
+const MAX_HISTORY_CHARS = 9500;
 const MAX_FORM_CHARS = 3000;
 
 function clean(value, limit = 650) {
@@ -64,7 +65,9 @@ function formContext(ticket) {
     return output;
 }
 
-function speakerRole(entry, ticket) {
+function speakerRole(entry, ticket, botId) {
+    if (entry.author.id === botId) return "AI assistant";
+
     if (entry.author.id === ticket.userId) {
         return "Ticket opener";
     }
@@ -87,7 +90,7 @@ async function conversationContext(message, ticket) {
     let collection;
     try {
         collection = await message.channel.messages.fetch({
-            limit: 35,
+            limit: 90,
             before: message.id
         });
     } catch (error) {
@@ -99,11 +102,19 @@ async function conversationContext(message, ticket) {
     }
 
     const startedAt = new Date(ticket.createdAt).getTime();
+    const botId = message.client.user?.id;
     const messages = [...collection.values()]
         .filter(entry =>
             entry.author &&
-            !entry.author.bot &&
             !entry.webhookId &&
+            (
+                !entry.author.bot ||
+                (
+                    entry.author.id === botId &&
+                    entry.reference?.messageId &&
+                    /^<@!?\\d+>\\s*\\n/.test(entry.content || "")
+                )
+            ) &&
             (
                 !Number.isFinite(startedAt) ||
                 entry.createdTimestamp >= startedAt
@@ -116,9 +127,14 @@ async function conversationContext(message, ticket) {
     const result = [];
 
     for (const entry of messages) {
-        if (used >= 5200) break;
+        if (used >= MAX_HISTORY_CHARS) break;
 
-        const messageText = redact(clean(entry.content, 650));
+        const messageText = redact(clean(
+            entry.author.id === botId
+                ? entry.content.replace(/^<@!?\d+>\s*/, "")
+                : entry.content,
+            700
+        ));
         const attachmentNames = [...entry.attachments.values()]
             .slice(0, 3)
             .map(file => clean(file.name || "attachment", 70));
@@ -131,12 +147,12 @@ async function conversationContext(message, ticket) {
         const text = [messageText, attachmentText]
             .filter(Boolean)
             .join(" ")
-            .slice(0, 5200 - used);
+            .slice(0, MAX_HISTORY_CHARS - used);
 
         if (!text) continue;
 
         result.push({
-            speaker: speakerRole(entry, ticket),
+            speaker: speakerRole(entry, ticket, botId),
             text
         });
 
@@ -146,17 +162,54 @@ async function conversationContext(message, ticket) {
     return result;
 }
 
+// Share only read-only, public server information. Never enumerate
+// private support tickets, staff rooms, or role-restricted channels.
+function serverContext(message) {
+    const guild = message.guild;
+    const everyone = guild?.roles?.everyone;
+    const publicChannels = [...(guild?.channels?.cache?.values() || [])]
+        .filter(channel =>
+            channel?.type === ChannelType.GuildText &&
+            everyone &&
+            channel.permissionsFor?.(everyone)?.has(PermissionFlagsBits.ViewChannel) &&
+            channel.permissionsFor?.(message.member)?.has(PermissionFlagsBits.ViewChannel)
+        )
+        .sort((a, b) => a.position - b.position)
+        .slice(0, 25)
+        .map(channel => clean(channel.name, 75));
+
+    return {
+        name: clean(guild?.name || "ItamaRos", 100),
+        description: clean(guild?.description || "", 300),
+        memberCount: Number.isFinite(guild?.memberCount) ? guild.memberCount : null,
+        publicChannels,
+        ticketCategories: getPublicTicketTypes().map(type => type.label),
+        knownFeatures: [
+            "Support tickets and staff assistance",
+            "Giveaways and winner tickets",
+            "Drops, XP and levels",
+            "Daily questions and streaks",
+            "Coins, shop and store items",
+            "Kings ranks and roles",
+            "Invites and member welcoming",
+            "Server radio"
+        ]
+    };
+}
+
 async function buildTicketContext(message, ticket) {
     return {
         type: ticket.type,
         typeLabel: ticket.typeLabel,
         formAnswers: formContext(ticket),
-        recentMessages: await conversationContext(message, ticket)
+        recentMessages: await conversationContext(message, ticket),
+        server: serverContext(message)
     };
 }
 
 module.exports = {
     buildTicketContext,
     formContext,
-    conversationContext
+    conversationContext,
+    serverContext
 };
