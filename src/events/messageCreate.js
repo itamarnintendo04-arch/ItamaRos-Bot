@@ -56,7 +56,7 @@ async function generateGeminiText(request) {
     ],
 
     generationConfig: {
-      temperature: 0.4,
+      temperature: 0.65,
       maxOutputTokens: Math.max(
         1000,
         request.maxOutputTokens || 550
@@ -157,10 +157,8 @@ module.exports = {
 
     if (!botId) return;
 
-    // AI only responds when mentioned
-    if (!message.mentions.users.has(botId)) {
-      return;
-    }
+    // The mention handler starts sessions with a mention and then
+    // handles follow-up messages only for that ticket participant.
 
     try {
       await handleAiMention(message);
