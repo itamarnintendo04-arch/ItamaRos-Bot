@@ -112,7 +112,7 @@ async function conversationContext(message, ticket) {
                 (
                     entry.author.id === botId &&
                     entry.reference?.messageId &&
-                    /^<@!?\\d+>\\s*\\n/.test(entry.content || "")
+                    /^<@!?\d+>\s*\n/.test(entry.content || "")
                 )
             ) &&
             (
