@@ -9,13 +9,17 @@ const { buildTicketContext } = require("./ticketContext");
 // ================================================
 
 const SETTINGS = Object.freeze({
-    COOLDOWN_MS: 15000,
+    COOLDOWN_MS: 5000,
+    SESSION_TTL_MS: 30 * 60 * 1000,
     MAX_QUESTION_LENGTH: 1500,
     MAX_RESPONSE_LENGTH: 1800
 });
 
 const cooldowns = new Map();
 const activeChannels = new Set();
+// Only the member who started an AI exchange gets automatic follow-ups.
+// These in-memory sessions expire and require another mention after a restart.
+const conversationSessions = new Map();
 
 const OUT_OF_SCOPE_MESSAGE = [
     "🛡️ **Server Support Only**",
@@ -312,10 +316,20 @@ function createAiMentionHandler(options = {}) {
 
         const botId = message.client.user?.id;
 
-        if (
-            !botId ||
-            !message.mentions.users.has(botId)
-        ) {
+        if (!botId) return false;
+
+        const mentioned = message.mentions.users.has(botId);
+        const sessionKey = [
+            message.guild.id, message.channel.id, message.author.id
+        ].join(":");
+        const activeUntil = conversationSessions.get(sessionKey) || 0;
+
+        // A mention starts (or renews) a conversation in a ticket.
+        // Subsequent messages by that same member do not need mentions.
+        // Staff and other participants are never auto-replied to unless
+        // they start their own conversation with a mention.
+        if (!mentioned && activeUntil <= Date.now()) {
+            conversationSessions.delete(sessionKey);
             return false;
         }
 
@@ -334,6 +348,7 @@ function createAiMentionHandler(options = {}) {
 
         // No replies outside active ticket channels.
         if (!ticket) {
+            conversationSessions.delete(sessionKey);
             return false;
         }
 
@@ -343,11 +358,14 @@ function createAiMentionHandler(options = {}) {
         );
 
         if (!question) {
-            await replyToUser(
-                message,
-                "🤖 Hi! Ask me a question about the ItamaRos server."
-            ).catch(() => {});
-
+            // Don't answer empty automatic follow-ups (e.g. an attachment)
+            // with the same greeting on every message.
+            if (mentioned) {
+                await replyToUser(
+                    message,
+                    "🤖 Hi! Ask me a question about the ItamaRos server."
+                ).catch(() => {});
+            }
             return true;
         }
 
@@ -370,24 +388,28 @@ function createAiMentionHandler(options = {}) {
         );
 
         if (remaining > 0) {
-            await replyToUser(
-                message,
-                `⏳ Please wait ${Math.ceil(
-                    remaining / 1000
-                )} seconds before asking again.`
-            ).catch(() => {});
-
+            // Automatic follow-ups during the short anti-spam cooldown
+            // are skipped quietly instead of sending the same notice.
+            if (mentioned) {
+                await replyToUser(
+                    message,
+                    `⏳ Please wait ${Math.ceil(
+                        remaining / 1000
+                    )} seconds before asking again.`
+                ).catch(() => {});
+            }
             return true;
         }
 
         const channelId = message.channel.id;
 
         if (activeChannels.has(channelId)) {
-            await replyToUser(
-                message,
-                "⏳ I'm already answering a question in this ticket."
-            ).catch(() => {});
-
+            if (mentioned) {
+                await replyToUser(
+                    message,
+                    "⏳ I'm already answering a question in this ticket."
+                ).catch(() => {});
+            }
             return true;
         }
 
@@ -429,6 +451,18 @@ function createAiMentionHandler(options = {}) {
                 message,
                 response
             );
+
+            conversationSessions.set(
+                sessionKey,
+                Date.now() + SETTINGS.SESSION_TTL_MS
+            );
+
+            // Avoid unbounded growth in long-running Render processes.
+            if (conversationSessions.size > 1000) {
+                for (const [key, until] of conversationSessions) {
+                    if (until <= Date.now()) conversationSessions.delete(key);
+                }
+            }
 
             return true;
         } catch (error) {
