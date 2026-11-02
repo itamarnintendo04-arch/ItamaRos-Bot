@@ -87,6 +87,7 @@ function createGiveawayEmbed({
     winnerCount,
     minLevel = 0,
     kingsOnly = false,
+    minKingsLevel = 1,
     endsAt,
     imageUrl
 }) {
@@ -115,7 +116,7 @@ function createGiveawayEmbed({
                 `**👑 Hosted by:** <@${hostId}>`,
                 `**🏆 Winners:** ${winnerCount}`,
                 kingsOnly
-                    ? "**👑 Entry requirement:** Any Kings rank"
+                    ? `**👑 Entry requirement:** Kings Level ${minKingsLevel}+`
                     : `**⭐ Minimum level:** ${minLevel > 0 ? `Level ${minLevel}+` : "Everyone"}`,
                 "**Participants:** 0",
                 "",
@@ -220,7 +221,8 @@ async function createGiveaway({
     winners,
     minLevel = 0,
     image = null,
-    kingsOnly = false
+    kingsOnly = false,
+    minKingsLevel = 1
 }) {
     if (
         !guild?.id ||
@@ -289,6 +291,10 @@ async function createGiveaway({
         );
     }
 
+    if (kingsOnly && (!Number.isInteger(minKingsLevel) || minKingsLevel < 1 || minKingsLevel > 5)) {
+        return failure("INVALID_KINGS_LEVEL", "Kings level must be between 1 and 5.");
+    }
+
     if (!isValidImage(image)) {
         return failure(
             "INVALID_IMAGE",
@@ -332,6 +338,7 @@ async function createGiveaway({
         winnerCount: winners,
         minLevel: kingsOnly ? 0 : minLevel,
         kingsOnly: Boolean(kingsOnly),
+        minKingsLevel: kingsOnly ? minKingsLevel : null,
 
         participants: [],
         removedParticipants: [],
@@ -365,6 +372,7 @@ async function createGiveaway({
             winnerCount: winners,
             minLevel,
             kingsOnly,
+            minKingsLevel,
             endsAt,
             imageUrl
         });
