@@ -12,6 +12,7 @@ const { ObjectId } = require("mongodb");
 const { getDatabase } = require("../../../database");
 
 const { GIVEAWAY_SETTINGS } = require("./config");
+const { baseKingsRole, getMemberTier } = require("../kings/ranks");
 
 const {
     joinGiveaway,
@@ -413,7 +414,8 @@ async function handleGiveawayButtons(interaction) {
             const member = await interaction.guild.members.fetch(
                 interaction.user.id
             ).catch(() => null);
-            const kingsRoleId = process.env.KINGS_ROLE_ID;
+            const baseRole = member ? await baseKingsRole(interaction.guild) : null;
+            const kingsRoleId = baseRole?.id || process.env.KINGS_ROLE_ID;
             const hasKings = Boolean(member?.roles.cache.some(role =>
                 role.id === kingsRoleId ||
                 /^kings?(?:[ |:-]*(?:level|lvl|rank|tier)?[ -]*[0-9]+)?$/i
@@ -422,11 +424,14 @@ async function handleGiveawayButtons(interaction) {
             const staff = Boolean(member?.permissions.has(
                 PermissionFlagsBits.ManageGuild
             ) || member?.permissions.has(PermissionFlagsBits.Administrator));
-            if (!hasKings && !staff) {
+            const requiredKingsLevel = Math.max(1, Number(giveaway.minKingsLevel) || 1);
+            const currentKingsLevel = member && baseRole
+                ? await getMemberTier(member, baseRole) : 0;
+            if ((!hasKings && !staff) || (requiredKingsLevel > 1 && currentKingsLevel < requiredKingsLevel)) {
                 await interaction.editReply({
                     embeds: [createResponse(
                         "👑 Kings Rank Required",
-                        "This giveaway is only for members with any Kings rank. No minimum Kings level is required.",
+                        `This giveaway requires **Kings Level ${requiredKingsLevel}+**. Your current Kings level is **${currentKingsLevel}**.`,
                         COLORS.WARNING
                     )],
                     components: []
