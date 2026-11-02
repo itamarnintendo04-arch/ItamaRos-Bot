@@ -29,6 +29,9 @@ const data = new SlashCommandBuilder()
         .setMinValue(1)
         .setMaxValue(GIVEAWAY_SETTINGS.MAX_WINNERS)
         .setRequired(true))
+    .addIntegerOption(o => o.setName("minimum_king_level")
+        .setDescription("Minimum Kings rank (1–5; default: 1)")
+        .setMinValue(1).setMaxValue(5).setRequired(false))
     .addAttachmentOption(o => o.setName("image")
         .setDescription("Optional royal giveaway image")
         .setRequired(false));
@@ -76,6 +79,7 @@ async function execute(interaction) {
 
         const prize = interaction.options.getString("prize", true);
         const winners = interaction.options.getInteger("winners", true);
+        const minKingsLevel = interaction.options.getInteger("minimum_king_level") ?? 1;
 
         const result = await createGiveaway({
             guild: interaction.guild,
@@ -83,7 +87,8 @@ async function execute(interaction) {
             host: interaction.user,
             prize, duration, winners, image,
             kingsOnly: true,
-            minLevel: 0
+            minLevel: 0,
+            minKingsLevel
         });
 
         if (!result?.success) {
@@ -97,7 +102,7 @@ async function execute(interaction) {
                 "",
                 "🎁 **Prize:** " + prize,
                 "🏆 **Winners:** " + winners,
-                "👑 **Eligibility:** Any Kings rank (no level minimum)",
+                "👑 **Eligibility:** Kings Level " + minKingsLevel + "+",
                 "🎫 **Winner tickets:** Automatically opened at the end",
                 "",
                 "🆔 **Giveaway ID:** " + result.giveawayId,
