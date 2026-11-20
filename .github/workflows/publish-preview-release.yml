@@ -1,0 +1,67 @@
+name: Publish Preview Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Unique tag for a new preview release (optional)'
+        required: false
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-preview-release.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REQUESTED_TAG: ${{ github.event.inputs.tag || '' }}
+      DEFAULT_TAG: 'v0.1.0-preview.1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare verified preview assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="$DEFAULT_TAG"
+          if [ -n "$REQUESTED_TAG" ]; then TAG="$REQUESTED_TAG"; fi
+          if [[ ! "$TAG" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,90}$ ]]; then exit 1; fi
+          printf '%s' "$TAG" > "$RUNNER_TEMP/release-tag"
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          cat > "$RUNNER_TEMP/release-notes.md" <<'ITAMAROS_NOTES'
+          # ItamaRos-Bot — Source Preview
+          
+          **Preview / prerelease. Not a stable production release.**
+          
+          Existing Discord bot codebase source snapshot, not a verified deployed service.
+          
+          GitHub-provided source archive only.
+          
+          Binary assets, if present, were downloaded from successful earlier GitHub Actions builds and may not match the exact commit of this source snapshot.
+          Unsigned IPAs require valid device-specific Apple signing and provisioning. No Apple ID passwords, P12 files, private signing keys, or certificate password files are included.
+          
+          To publish another version, use Actions > Publish Preview Release and provide a unique tag.
+          ITAMAROS_NOTES
+          if compgen -G "$RUNNER_TEMP/release-assets/*" > /dev/null; then
+            (cd "$RUNNER_TEMP/release-assets" && sha256sum * > SHA256SUMS.txt)
+          fi
+      - name: Create GitHub prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="$(cat "$RUNNER_TEMP/release-tag")"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; leaving it unchanged."
+            exit 0
+          fi
+          shopt -s nullglob
+          ASSETS=("$RUNNER_TEMP"/release-assets/*)
+          gh release create "$TAG" "${ASSETS[@]}" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --title 'ItamaRos-Bot — Source Preview' \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq '.url'
